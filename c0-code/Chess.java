@@ -1,3 +1,4 @@
+import java.security.InvalidParameterException;
 import java.util.*;
 import java.util.regex.Pattern;
 
@@ -11,16 +12,21 @@ import java.util.regex.Pattern;
 
 public class Chess implements AbstractStrategyGame{
     
-    private Piece[][] board;
-    private List<Piece> whitePieces;
-    private List<Piece> blackPieces;
-    private Map<Piece, Set<Integer[]>> whiteControlledSquares;
-    private Map<Piece, Set<Integer[]>> blackControlledSquares;
+    private Piece[][] board = new Piece[8][8];
+    private List<Piece> whitePieces = new ArrayList<>();
+    private List<Piece> blackPieces = new ArrayList<>();
+    private Map<Piece, Set<Integer[]>> whiteControlledSquares = new HashMap<>();
+    private Map<Piece, Set<Integer[]>> blackControlledSquares = new HashMap<>();
+    
+    private boolean[] whiteCastlingRights = new boolean[2];
+    private boolean[] blackCastlingRights = new boolean[2];
 
+    private boolean[] playerInCheck = new boolean[]{false, false};
+    private List<Piece> blackCheckingPieces = new ArrayList<>();
+    private List<Piece> whiteCheckingPieces = new ArrayList<>();
+    private Map<String, Integer> threeFoldCheck = new HashMap<>();
+    
     private boolean whiteTurn;
-    private boolean[] whiteCastlingRights;
-    private boolean[] blackCastlingRights;
-
     private int[] enPassantSquare;
     private int fiftyMoveRuleCounter;
     private int moveNumber;
@@ -30,17 +36,11 @@ public class Chess implements AbstractStrategyGame{
 
     private Integer[] whiteKingSquare;
     private Integer[] blackKingSquare;
-
-    private boolean[] playerInCheck;
-
-    private List<Piece> blackCheckingPieces;
-    private List<Piece> whiteCheckingPieces;
-
-    private Map<String, Integer> threeFoldCheck;
-
+    
     private int winner;
 
-    private final HashMap<Piece.PieceType, String> TYPE_TO_CHAR = new HashMap<>(){{
+
+    private final HashMap<Piece.PieceType, String> TYPE_TO_STRING = new HashMap<>(){{
         put(Piece.PieceType.PAWN, "");
         put(Piece.PieceType.KNIGHT, "N");
         put(Piece.PieceType.BISHOP, "B");
@@ -53,28 +53,14 @@ public class Chess implements AbstractStrategyGame{
 
     public Chess(){
         //board setup
-        board = new Piece[8][8];
-        whitePieces = new ArrayList<>();
-        blackPieces = new ArrayList<>();
-        whiteControlledSquares = new HashMap<>();
-        blackControlledSquares = new HashMap<>();
-        whiteCastlingRights = new boolean[2];
-        blackCastlingRights = new boolean[2];
-        threeFoldCheck = new HashMap<>();
-
-        String FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+        String fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
         pgn = "";
-        startingFEN = FEN;
-
-        playerInCheck = new boolean[]{false, false};
-
-        whiteCheckingPieces = new ArrayList<>();
-        blackCheckingPieces = new ArrayList<>();
+        startingFEN = fen;
 
         winner = -1;
 
-        String[] temp = FEN.split(" ");
+        String[] temp = fen.split(" ");
         String[] ranks = temp[0].split("/");
         for(int j = 0; j < ranks.length; j++){
             for(int i = 0; i < ranks[j].length(); i++){
@@ -171,7 +157,7 @@ public class Chess implements AbstractStrategyGame{
         fiftyMoveRuleCounter = Integer.parseInt(temp[4]);
         moveNumber = Integer.parseInt(temp[5]);
 
-        threeFoldCheck.put(FEN, 1);
+        threeFoldCheck.put(fen, 1);
 
     }
 
@@ -302,7 +288,7 @@ public class Chess implements AbstractStrategyGame{
         if(whiteTurn){
             pgn += moveNumber + ".";
         }
-        pgn += TYPE_TO_CHAR.get(p.getPieceType());
+        pgn += TYPE_TO_STRING.get(p.getPieceType());
 
         //regular capture
         if(board[endFile][endRank] != null){
@@ -433,9 +419,9 @@ public class Chess implements AbstractStrategyGame{
                         nullCounter = 0;
                     }
                     if(board[i][j].isWhite()){
-                        FEN += TYPE_TO_CHAR.get(board[i][j].getPieceType());
+                        FEN += TYPE_TO_STRING.get(board[i][j].getPieceType());
                     } else {
-                        FEN += TYPE_TO_CHAR.get(board[i][j].getPieceType()).toLowerCase();
+                        FEN += TYPE_TO_STRING.get(board[i][j].getPieceType()).toLowerCase();
                     }
                 }
             }
@@ -533,89 +519,19 @@ public class Chess implements AbstractStrategyGame{
 
     private Set<Integer[]> getPossibleBishopMoves(int file, int rank){
         Set<Integer[]> moves = new HashSet<>();
-        int tempFile = file + 1;
-        int tempRank = rank + 1;
-        if(tempFile < 8 && tempRank < 8){
-            moves.add(new Integer[]{tempFile, tempRank});
-            while(tempFile < 7 && tempRank < 7 && board[tempFile][tempRank] == null){
-                tempFile ++;
-                tempRank ++;
-                moves.add(new Integer[]{tempFile, tempRank});
-            }
-        }
-            
-        tempFile = file + 1;
-        tempRank = rank - 1;
-        if(tempFile < 8 && tempRank >= 0){
-            moves.add(new Integer[]{tempFile, tempRank});
-            while(tempFile < 7 && tempRank > 0 && board[tempFile][tempRank] == null){
-                tempFile ++;
-                tempRank --;
-                moves.add(new Integer[]{tempFile, tempRank});
-            }
-        }
-
-        tempFile = file - 1;
-        tempRank = rank - 1;
-        if(tempFile >= 0 && tempRank >= 0){
-            moves.add(new Integer[]{tempFile, tempRank});
-            while(tempFile > 0 && tempRank > 0 && board[tempFile][tempRank] == null){
-                tempFile --;
-                tempRank --;
-                moves.add(new Integer[]{tempFile, tempRank});
-            }
-        }
-
-        tempFile = file - 1;
-        tempRank = rank + 1;
-        if(tempFile >= 0 && tempRank < 8){
-            moves.add(new Integer[]{tempFile, tempRank});
-            while(tempFile > 0 && tempRank < 7 && board[tempFile][tempRank] == null){
-                tempFile --;
-                tempRank ++;
-                moves.add(new Integer[]{tempFile, tempRank});
-            }
-        }
+        moves.addAll(getDirectionalAttacks(file, rank, 1, 1));
+        moves.addAll(getDirectionalAttacks(file, rank, -1, 1));
+        moves.addAll(getDirectionalAttacks(file, rank, 1, -1));
+        moves.addAll(getDirectionalAttacks(file, rank, -1, -1));
         return moves;
     }
 
     private Set<Integer[]> getPossibleRookMoves(int file, int rank){
         Set<Integer[]> moves = new HashSet<>();
-        int tempFile = file + 1;
-        if(tempFile < 8){
-            moves.add(new Integer[]{tempFile, rank});
-            while(tempFile < 7 && board[tempFile][rank] == null){
-                tempFile ++;
-                moves.add(new Integer[]{tempFile, rank});
-            }
-        }
-
-        tempFile = file - 1;
-        if(tempFile >= 0){
-            moves.add(new Integer[]{tempFile, rank});
-            while(tempFile > 0 && board[tempFile][rank] == null){
-                tempFile --;
-                moves.add(new Integer[]{tempFile, rank});
-            }
-        }
-
-        int tempRank = rank + 1;
-        if(tempRank < 8){
-            moves.add(new Integer[]{file, tempRank});
-            while(tempRank < 7 && board[file][tempRank] == null){
-                tempRank ++;
-                moves.add(new Integer[]{file, tempRank});
-            }
-        }
-        
-        tempRank = rank - 1;
-        if(tempRank >= 0){
-            moves.add(new Integer[]{file, tempRank});
-            while(tempRank > 0 && board[file][tempRank] == null){
-                tempRank --;
-                moves.add(new Integer[]{file, tempRank});
-            }
-        }
+        moves.addAll(getDirectionalAttacks(file, rank, 1, 0));
+        moves.addAll(getDirectionalAttacks(file, rank, -1, 0));
+        moves.addAll(getDirectionalAttacks(file, rank, 0, 1));
+        moves.addAll(getDirectionalAttacks(file, rank, 0, -1));
 
         return moves;
     }
@@ -648,6 +564,24 @@ public class Chess implements AbstractStrategyGame{
         }
 
         return moves;
+    }
+
+    private Set<Integer[]> getDirectionalAttacks(int file, int rank, int fileDirection, int rankDirection){
+        if(fileDirection > 1 || fileDirection < -1 || rankDirection > 1 || rankDirection < -1){
+            throw new InvalidParameterException("Directions must be between -1 and 1 inclusive.");
+        }
+        Set<Integer[]> attacks = new HashSet<>();
+        int tempFile = file + fileDirection;
+        int tempRank = rank + rankDirection;
+        if(tempFile < 8 && tempFile >= 0 && tempRank < 8 && tempRank >= 0){
+            attacks.add(new Integer[]{tempFile, tempRank});
+            while(tempFile < 8 && tempFile >= 0 && tempRank < 8 && tempRank >= 0 && board[tempFile][tempRank] == null){
+                tempFile += fileDirection;
+                tempRank += rankDirection;
+                attacks.add(new Integer[]{tempFile, tempRank});
+            }
+        }
+        return attacks;
     }
 
     private Map<Piece, Set<Integer[]>> getLegalMoves(){
