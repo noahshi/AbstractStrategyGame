@@ -1,6 +1,6 @@
-import java.security.InvalidParameterException;
+import java.security.*;
 import java.util.*;
-import java.util.regex.Pattern;
+import java.util.regex.*;
 
 
 
@@ -18,6 +18,8 @@ public class Chess implements AbstractStrategyGame{
     private List<Piece> blackPieces = new ArrayList<>();
     private Map<Piece, Set<Square>> whiteControlledSquares = new HashMap<>();
     private Map<Piece, Set<Square>> blackControlledSquares = new HashMap<>();
+
+    private Map<Piece, Set<Square>> pinnedPieceAvailableMoves = new HashMap<>();
     
     private boolean[] whiteCastlingRights = new boolean[2];
     private boolean[] blackCastlingRights = new boolean[2];
@@ -55,6 +57,8 @@ public class Chess implements AbstractStrategyGame{
     public Chess(){
         //board setup
         String fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+
+        fen = "rnbqk1nr/pppp1ppp/8/4p3/1b1P4/8/PPPBPPPP/RN1QKBNR w KQkq - 2 3";
 
         startingFEN = fen;
 
@@ -343,7 +347,7 @@ public class Chess implements AbstractStrategyGame{
                 blackKingSquare = new Square(endFile, endRank);
             }
         }
-            
+        
         calculateAttacks();
         
         pgn += move.substring(2);
@@ -555,13 +559,59 @@ public class Chess implements AbstractStrategyGame{
         int tempRank = square.rank + rankDirection;
         if(tempFile < BOARD_SIZE && tempFile >= 0 && tempRank < BOARD_SIZE && tempRank >= 0){
             attacks.add(new Square(tempFile, tempRank));
-            while(tempFile < BOARD_SIZE - 1 && tempFile >= 0 && tempRank < BOARD_SIZE - 1 && tempRank >= 0 && board[tempFile][tempRank] == null){
+            pinCheck(square, new Square(tempFile, tempRank), fileDirection, rankDirection);
+
+            while(tempFile < BOARD_SIZE - 1 && tempFile > 0 && tempRank < BOARD_SIZE - 1 && tempRank > 0 && board[tempFile][tempRank] == null){
                 tempFile += fileDirection;
                 tempRank += rankDirection;
                 attacks.add(new Square(tempFile, tempRank));
             }
+            pinCheck(square, new Square(tempFile, tempRank), fileDirection, rankDirection);
+
+            if(board[tempFile][tempRank] != null && pinnedPieceAvailableMoves.get(board[tempFile][tempRank]) != null 
+            && pinnedPieceAvailableMoves.get(board[tempFile][tempRank]).size() != 0){
+                for(Square attack : attacks){
+                    if(attack.file != tempFile && attack.rank != tempRank){
+                        pinnedPieceAvailableMoves.get(board[tempFile][tempRank]).add(attack);
+                    }
+                }
+            }
         }
+        
         return attacks;
+    }
+
+    private void pinCheck(Square attackingPiece, Square pinnedPiece, int fileDirection, int rankDirection){
+        Piece pinned = board[pinnedPiece.file][pinnedPiece.rank];
+        if(pinned != null && 
+            pinned.isWhite != board[attackingPiece.file][attackingPiece.rank].isWhite){
+                
+            pinnedPieceAvailableMoves.put(pinned, new HashSet<Square>());
+            System.out.println("entering pin check");
+
+            int tempFile = pinnedPiece.file;
+            int tempRank = pinnedPiece.rank;
+            while(tempFile < BOARD_SIZE - 1 && tempFile > 0 && tempRank < BOARD_SIZE - 1 && tempRank > 0){
+                tempFile += fileDirection;
+                tempRank += rankDirection;
+
+                pinnedPieceAvailableMoves.get(pinned).add(new Square(tempFile, tempRank));
+
+                System.out.println("checking square " + tempFile + " " + tempRank);
+                if(board[tempFile][tempRank] != null){
+                    if(board[tempFile][tempRank].pieceType == Piece.PieceType.KING){
+                        board[pinnedPiece.file][pinnedPiece.rank].isPinned = true;
+                        System.out.println(TYPE_TO_STRING.get(board[pinnedPiece.file][pinnedPiece.rank].pieceType) + " is pinned");
+                    }
+                    
+                    tempFile = Integer.MAX_VALUE; //exiting loop
+                }
+            }
+
+            if(!pinned.isPinned){
+                pinnedPieceAvailableMoves.get(pinned).clear();
+            }
+        }
     }
 
     private void removeOutOfBounds(Set<Square> moves){
@@ -581,44 +631,55 @@ public class Chess implements AbstractStrategyGame{
         if(whiteTurn){
             for(Piece piece : whitePieces){
                 legalMoves.put(piece, new HashSet<Square>());
-                for(Square move : whiteControlledSquares.get(piece)){
-                    legalMoves.get(piece).add(move);
-                    if(board[move.file][move.rank] != null && board[move.file][move.rank].isWhite){
-                        legalMoves.get(piece).remove(move);
-                    }
-                }
-                if(piece.pieceType == Piece.PieceType.KING){
+                if(piece.isPinned){
                     for(Square move : whiteControlledSquares.get(piece)){
-                        for(Piece enemyPiece : blackControlledSquares.keySet()){
-                            for(Square square : blackControlledSquares.get(enemyPiece)){
-                                if(square.file == move.file && square.rank == move.rank){
-                                    legalMoves.get(piece).remove(move);
+                        for(Square availableMove : pinnedPieceAvailableMoves.get(piece)){
+                            if(move.file == availableMove.file && move.rank == availableMove.rank){
+                                legalMoves.get(piece).add(move);
+                                System.out.println("move added");
+                            }
+                        }
+                    }
+                }else {
+                    for(Square move : whiteControlledSquares.get(piece)){
+                        legalMoves.get(piece).add(move);
+                        if(board[move.file][move.rank] != null && board[move.file][move.rank].isWhite){
+                            legalMoves.get(piece).remove(move);
+                        }
+                    }
+                    if(piece.pieceType == Piece.PieceType.KING){
+                        for(Square move : whiteControlledSquares.get(piece)){
+                            for(Piece enemyPiece : blackControlledSquares.keySet()){
+                                for(Square square : blackControlledSquares.get(enemyPiece)){
+                                    if(square.file == move.file && square.rank == move.rank){
+                                        legalMoves.get(piece).remove(move);
+                                    }
                                 }
                             }
                         }
                     }
-                }
-                if(piece.pieceType == Piece.PieceType.PAWN){
-                    //removing empty pawn captures from legal move list
-                    Set<Square> emptyCaptures = new HashSet<>();
-                    for(Square move : legalMoves.get(piece)){
-                        if(board[move.file][move.rank] == null){
-                            emptyCaptures.add(move);
+                    if(piece.pieceType == Piece.PieceType.PAWN){
+                        //removing empty pawn captures from legal move list
+                        Set<Square> emptyCaptures = new HashSet<>();
+                        for(Square move : legalMoves.get(piece)){
+                            if(board[move.file][move.rank] == null){
+                                emptyCaptures.add(move);
+                            }
+                            
+                            //re-adding en passant
+                            if(enPassantSquare != null && enPassantSquare.file == move.file && enPassantSquare.rank == move.rank){
+                                emptyCaptures.remove(move);
+                            }
                         }
                         
-                        //re-adding en passant
-                        if(enPassantSquare != null && enPassantSquare.file == move.file && enPassantSquare.rank == move.rank){
-                            emptyCaptures.remove(move);
+
+                        for(Square move : emptyCaptures){
+                            legalMoves.get(piece).remove(move);
                         }
-                    }
-                    
 
-                    for(Square move : emptyCaptures){
-                        legalMoves.get(piece).remove(move);
-                    }
-
-                    for(Square move : getPossiblePawnMoves(piece.square, piece.isWhite)){
-                        legalMoves.get(piece).add(move);
+                        for(Square move : getPossiblePawnMoves(piece.square, piece.isWhite)){
+                            legalMoves.get(piece).add(move);
+                        }
                     }
                 }
             }
@@ -707,41 +768,51 @@ public class Chess implements AbstractStrategyGame{
         } else {
             for(Piece piece : blackPieces){
                 legalMoves.put(piece, new HashSet<Square>());
-                for(Square move : blackControlledSquares.get(piece)){
-                    legalMoves.get(piece).add(move);
-                    if(board[move.file][move.rank] != null && !board[move.file][move.rank].isWhite){
-                        legalMoves.get(piece).remove(move);
-                    }
-                }
-                if(piece.pieceType == Piece.PieceType.KING){
+                if(piece.isPinned){
                     for(Square move : blackControlledSquares.get(piece)){
-                        for(Piece enemyPiece : whiteControlledSquares.keySet()){
-                            for(Square square : whiteControlledSquares.get(enemyPiece)){
-                                if(square.file == move.file && square.rank == move.rank){
-                                    legalMoves.get(piece).remove(move);
+                        for(Square availableMove : pinnedPieceAvailableMoves.get(piece)){
+                            if(move.file == availableMove.file && move.rank == availableMove.rank){
+                                legalMoves.get(piece).add(move);
+                            }
+                        }
+                    }
+                }else{
+                    for(Square move : blackControlledSquares.get(piece)){
+                        legalMoves.get(piece).add(move);
+                        if(board[move.file][move.rank] != null && !board[move.file][move.rank].isWhite){
+                            legalMoves.get(piece).remove(move);
+                        }
+                    }
+                    if(piece.pieceType == Piece.PieceType.KING){
+                        for(Square move : blackControlledSquares.get(piece)){
+                            for(Piece enemyPiece : whiteControlledSquares.keySet()){
+                                for(Square square : whiteControlledSquares.get(enemyPiece)){
+                                    if(square.file == move.file && square.rank == move.rank){
+                                        legalMoves.get(piece).remove(move);
+                                    }
                                 }
                             }
                         }
                     }
-                }
-                if(piece.pieceType == Piece.PieceType.PAWN){
-                    Set<Square> emptyCaptures = new HashSet<>();
-                    for(Square move : legalMoves.get(piece)){
-                        if(board[move.file][move.rank] == null){
-                            emptyCaptures.add(move);
-                        }
+                    if(piece.pieceType == Piece.PieceType.PAWN){
+                        Set<Square> emptyCaptures = new HashSet<>();
+                        for(Square move : legalMoves.get(piece)){
+                            if(board[move.file][move.rank] == null){
+                                emptyCaptures.add(move);
+                            }
 
-                        if(enPassantSquare != null && enPassantSquare.file == move.file && enPassantSquare.rank == move.rank){
-                            emptyCaptures.remove(move);
+                            if(enPassantSquare != null && enPassantSquare.file == move.file && enPassantSquare.rank == move.rank){
+                                emptyCaptures.remove(move);
+                            }
                         }
-                    }
-                    
-                    for(Square move : emptyCaptures){
-                        legalMoves.get(piece).remove(move);
-                    }
-                    
-                    for(Square move : getPossiblePawnMoves(piece.square, piece.isWhite)){
-                        legalMoves.get(piece).add(move);
+                        
+                        for(Square move : emptyCaptures){
+                            legalMoves.get(piece).remove(move);
+                        }
+                        
+                        for(Square move : getPossiblePawnMoves(piece.square, piece.isWhite)){
+                            legalMoves.get(piece).add(move);
+                        }
                     }
                 }
             }
@@ -832,6 +903,17 @@ public class Chess implements AbstractStrategyGame{
     }
 
     private void calculateAttacks(){
+        //resetting pin status
+        for(Piece piece : whitePieces){
+            piece.isPinned = false;
+            pinnedPieceAvailableMoves.put(piece, new HashSet<Square>());
+        }
+        for(Piece piece : blackPieces){
+            piece.isPinned = false;
+            pinnedPieceAvailableMoves.put(piece, new HashSet<Square>());
+        }
+
+        //calculating new attacks
         for(Piece piece : whitePieces){
             Set<Square> newControlledSquares;
             if(piece.pieceType == Piece.PieceType.PAWN){
