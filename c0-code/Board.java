@@ -26,8 +26,6 @@ public class Board {
 
     public Board(String fen){
 
-        fen = "rnbqk1nr/pppp1ppp/8/4p3/1b1P4/8/PPPBPPPP/RN1QKBNR w KQkq - 2 3";
-
         String[] temp = fen.split(" ");
         
         String[] ranks = temp[0].split("/");
@@ -137,13 +135,15 @@ public class Board {
         //one square forward
         if(board[square.file][square.rank + direction] == null){
             moves.add(new Square(square.file, square.rank + direction));
-        }
-        //two squares forward
-        if(square.rank == (isWhite ? 6 : 1)){
-            if(board[square.file][square.rank + direction * 2] == null){
-                moves.add(new Square(square.file, square.rank + direction * 2));
+
+            //two squares forward
+            if(square.rank == (isWhite ? 6 : 1)){
+                if(board[square.file][square.rank + direction * 2] == null){
+                    moves.add(new Square(square.file, square.rank + direction * 2));
+                }
             }
         }
+        
 
         return moves;
     }
@@ -292,9 +292,10 @@ public class Board {
         }
         fullFEN += " ";
         if(enPassantSquare == null){
-            fullFEN += "- ";
+            fullFEN += "-";
         } else {
-            fullFEN += (char)(enPassantSquare.file + (int)'a') + (BOARD_SIZE - enPassantSquare.rank);
+            fullFEN += (char)(enPassantSquare.file + (int)'a');
+            fullFEN += BOARD_SIZE - enPassantSquare.rank;
         }
 
         fullFEN += " " + fiftyMoveRuleCounter + " " + moveNumber;
