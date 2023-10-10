@@ -204,7 +204,7 @@ public class Board {
         Set<Square> moves = new HashSet<>();
         for(int fileDirection = -1; fileDirection <= 1; fileDirection++){
             for(int rankDirection = -1; rankDirection <= 1; rankDirection++){
-                if( fileDirection != 0 && rankDirection != 0){
+                if(fileDirection != 0 || rankDirection != 0){
                     moves.add(new Square(square.file + fileDirection, square.rank + rankDirection));
                 }
             }
@@ -224,12 +224,13 @@ public class Board {
         if(tempFile < BOARD_SIZE && tempFile >= 0 && tempRank < BOARD_SIZE && tempRank >= 0){
             attacks.add(new Square(tempFile, tempRank));
 
-            while(tempFile < BOARD_SIZE - 1 && tempFile > 0 && tempRank < BOARD_SIZE - 1 && tempRank > 0 && board[tempFile][tempRank] == null){
+            while(tempFile < BOARD_SIZE && tempFile >= 0 && tempRank < BOARD_SIZE && tempRank >= 0 && board[tempFile][tempRank] == null){
                 tempFile += fileDirection;
                 tempRank += rankDirection;
                 attacks.add(new Square(tempFile, tempRank));
             }
         }
+        removeOutOfBounds(attacks);
         
         return attacks;
     }
@@ -415,16 +416,16 @@ public class Board {
 
         playerInCheck = new boolean[]{false, false};
 
-        for(Piece p : whitePieces){
-            for(Square square : whiteControlledSquares.get(p)){
+        for(Piece piece : whitePieces){
+            for(Square square : whiteControlledSquares.get(piece)){
                 if(square.file == blackKingSquare.file && square.rank == blackKingSquare.rank){
                     playerInCheck[1] = true;
                 }
             }
         }
 
-        for(Piece p : blackPieces){
-            for(Square square : blackControlledSquares.get(p)){
+        for(Piece piece : blackPieces){
+            for(Square square : blackControlledSquares.get(piece)){
                 if(square.file == whiteKingSquare.file && square.rank == whiteKingSquare.rank){
                     playerInCheck[0] = true;
                 }
@@ -492,7 +493,23 @@ public class Board {
                 blackKingSquare = new Square(endFile, endRank);
             }
         }
+        calculateAttacks();
+    }
 
+    public void move(Piece piece, Square destination, Piece promotionPiece){
+        move(piece, destination);
+        if((destination.rank == 0 || destination.rank == 7) && piece.pieceType == Piece.PieceType.PAWN){
+            board[destination.file][destination.rank] = promotionPiece;
+            if(whiteTurn){
+                whitePieces.remove(piece);
+                whitePieces.add(promotionPiece);
+                whiteControlledSquares.put(promotionPiece, new HashSet<Square>());
+            } else {
+                blackPieces.remove(piece);
+                blackPieces.add(promotionPiece);
+                blackControlledSquares.put(promotionPiece, new HashSet<Square>());
+            }
+        }
         calculateAttacks();
     }
 }

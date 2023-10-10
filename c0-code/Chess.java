@@ -125,11 +125,11 @@ public class Chess implements AbstractStrategyGame{
             if(board.board[startFile][startRank].isWhite != board.whiteTurn){
                 throw new IllegalArgumentException("That is not your piece.");
             }
-        //typing symbols used in chess notation such as + $ # etc. is allowed for extra 
+        //typing symbols used in chess notation such as x + $ # etc. is allowed for extra 
         //leniency but they will be disregarded in cases where they should not be used.
         } else if (algMatcher.matches()){
             boolean doesMoveExist = false;
-
+            System.out.println(board.boardToFENShort());
             //piece movement
             if(algMatcher.group(1) != null){
 
@@ -146,8 +146,9 @@ public class Chess implements AbstractStrategyGame{
 
                 for(Piece piece : board.whiteTurn ? board.whitePieces : board.blackPieces){
                     if(TYPE_TO_STRING.get(piece.pieceType).equals(algMatcher.group(1))){
-                        System.out.println("Piece specified is " + TYPE_TO_STRING.get(piece.pieceType));
-                        for(Square square : board.whiteControlledSquares.get(piece)){
+                        //System.out.println("Piece specified is " + TYPE_TO_STRING.get(piece.pieceType));
+                        for(Square square : board.whiteTurn ? board.whiteControlledSquares.get(piece) : board.blackControlledSquares.get(piece)){
+                            //System.out.println("checking if move " + TYPE_TO_STRING.get(piece.pieceType) + (char)(square.file + (int)'a') + "" + (8 - square.rank) + " equals inputted move");
                             if(square.file == endFile && square.rank == endRank){
                                 
                                 if(startFile != -1){
@@ -205,6 +206,9 @@ public class Chess implements AbstractStrategyGame{
                         }
                     }
                 }
+                if(!doesMoveExist){ //need to throw exception before promotion check or startrank will be null
+                    throw new IllegalArgumentException("Move does not exist.");
+                }
                 if(algMatcher.group(8) != null && !algMatcher.group(8).equals(" e.p.") && !algMatcher.group(8).equals("e.p.")){
                     if(endRank != (board.whiteTurn ? 0 : 7)){
                         throw new IllegalArgumentException("Pawns can only promote when they reach the end of the board.");
@@ -253,23 +257,17 @@ public class Chess implements AbstractStrategyGame{
         if(piece.pieceType != Piece.PieceType.PAWN){
             board.pgn += TYPE_TO_STRING.get(piece.pieceType);
         }
+        
+        board.pgn += move.substring(2);
 
-        board.move(piece, new Square(endFile, endRank));
-
-        if((endRank == 0 || endRank == 7) && piece.pieceType == Piece.PieceType.PAWN){
-            board.board[endFile][endRank] = promotionPiece;
-            if(board.whiteTurn){
-                board.whitePieces.remove(piece);
-                board.whitePieces.add(promotionPiece);
-            } else {
-                board.blackPieces.remove(piece);
-                board.blackPieces.add(promotionPiece);
-            }
+        if(promotionPiece != null){
+            board.move(piece, new Square(endFile, endRank), promotionPiece);
+            board.pgn += "=" + TYPE_TO_STRING.get(promotionPiece);
+        } else {
+            board.move(piece, new Square(endFile, endRank));
         }
 
         board.calculateAttacks();
-        
-        board.pgn += move.substring(2);
 
         if(!board.whiteTurn){
             board.moveNumber ++;
