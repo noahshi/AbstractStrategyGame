@@ -32,6 +32,5 @@ public class Client {
         } else {
             System.out.println("It's a tie!");
         }
-        System.out.println(((Chess) game).getMoves());
     }
 }

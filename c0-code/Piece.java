@@ -1,3 +1,4 @@
+//This class is used to hold all the data about a specific piece in one place
 public class Piece {
     public enum PieceType {
         PAWN,

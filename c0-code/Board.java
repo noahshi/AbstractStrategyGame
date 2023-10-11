@@ -1,6 +1,7 @@
 import java.security.InvalidParameterException;
 import java.util.*;
 
+//This class contains all the information related to a board state
 public class Board {
     public final int BOARD_SIZE = 8;
     public Piece[][] board = new Piece[BOARD_SIZE][BOARD_SIZE];
@@ -23,7 +24,11 @@ public class Board {
 
     public Square whiteKingSquare;
     public Square blackKingSquare;
+    public Piece[] kingsideCastleRooks = new Piece[2];
+    public Piece[] queensideCastleRooks = new Piece[2];
 
+    //creates a board based on the input string
+    //the input string must be given in Forsyth-Edwards Notation or an exception will be thrown
     public Board(String fen){
 
         String[] temp = fen.split(" ");
@@ -50,6 +55,13 @@ public class Board {
                 } else if(currentChar == 'r'){
                     board[file][rank] = new Piece(Piece.PieceType.ROOK, false, new Square(file, rank));
                     blackControlledSquares.put(board[file][rank], getPossibleRookMoves(new Square(file, rank)));
+                    if(rank == 0){
+                        if(queensideCastleRooks[1] == null){
+                            queensideCastleRooks[1] = board[file][rank];
+                        } else {
+                            kingsideCastleRooks[1] = board[file][rank];
+                        }
+                    }
 
                 } else if(currentChar == 'q'){
                     board[file][rank] = new Piece(Piece.PieceType.QUEEN, false, new Square(file, rank));
@@ -75,6 +87,13 @@ public class Board {
                 } else if(currentChar == 'R'){
                     board[file][rank] = new Piece(Piece.PieceType.ROOK, true, new Square(file, rank));
                     whiteControlledSquares.put(board[file][rank], getPossibleRookMoves(new Square(file, rank)));
+                    if(rank == 7){
+                        if(queensideCastleRooks[0] == null){
+                         queensideCastleRooks[0] = board[file][rank];
+                        } else {
+                            kingsideCastleRooks[0] = board[file][rank];
+                        }
+                    }
 
                 } else if(currentChar == 'Q'){
                     board[file][rank] = new Piece(Piece.PieceType.QUEEN, true, new Square(file, rank));
@@ -128,7 +147,8 @@ public class Board {
         
     }
 
-
+    //it takes in a square and returns a set of all the possible squares a pawn can move to if it was located on the input square
+    //the boolean determines which way the pawn is facing
     public Set<Square> getPossiblePawnMoves(Square square, boolean isWhite){
         Set<Square> moves = new HashSet<>();
         int direction = isWhite ? -1 : 1;
@@ -148,6 +168,8 @@ public class Board {
         return moves;
     }
 
+    //it takes in a square and returns a set of all the squares a pawn would control if it was located on the input square
+    //the boolean input determines which way the pawn faces
     private Set<Square> getPossiblePawnCaptures(Square square, boolean isWhite){
         Set<Square> moves = new HashSet<>();
         int direction = isWhite ? -1 : 1;
@@ -161,6 +183,7 @@ public class Board {
         return moves;
     }
 
+    //it takes in a square and returns a set of all the squares a knight would control if it was located on the input square
     private Set<Square> getPossibleKnightMoves(Square square){
         Set<Square> moves = new HashSet<>();
         for(int i = 1; i <= 2; i++){
@@ -174,6 +197,7 @@ public class Board {
         return moves;
     }
 
+    //it takes in a square and returns a set of all the squares a bishop would control if it was located on the input square
     private Set<Square> getPossibleBishopMoves(Square square){
         Set<Square> moves = new HashSet<>();
         moves.addAll(getDirectionalAttacks(square, 1, 1));
@@ -183,6 +207,7 @@ public class Board {
         return moves;
     }
 
+    //it takes in a square and returns a set of all the squares a rook would control if it was located on the input square
     private Set<Square> getPossibleRookMoves(Square square){
         Set<Square> moves = new HashSet<>();
         moves.addAll(getDirectionalAttacks(square, 1, 0));
@@ -193,6 +218,7 @@ public class Board {
         return moves;
     }
 
+    //it takes in a square and returns a set of all the squares a queen would control if it was located on the input square
     private Set<Square> getPossibleQueenMoves(Square square){
         Set<Square> moves = new HashSet<>();
         moves.addAll(getPossibleBishopMoves(square));
@@ -200,6 +226,7 @@ public class Board {
         return moves;
     }
 
+    //it takes in a square and returns a set of all the squares a king would control if it was located on the input square
     private Set<Square> getPossibleKingMoves(Square square){
         Set<Square> moves = new HashSet<>();
         for(int fileDirection = -1; fileDirection <= 1; fileDirection++){
@@ -214,6 +241,9 @@ public class Board {
         return moves;
     }
 
+    //it takes in a square and 2 directions and moves in those 2 directions until it reaches another pieces or reaches the edge of the board
+    //it then returns a set of all the squares it covered
+    //this method is used to determine bishop, rook, and queen attacks
     private Set<Square> getDirectionalAttacks(Square square, int fileDirection, int rankDirection){
         if(fileDirection > 1 || fileDirection < -1 || rankDirection > 1 || rankDirection < -1){
             throw new InvalidParameterException("Directions must be between -1 and 1 inclusive.");
@@ -235,6 +265,7 @@ public class Board {
         return attacks;
     }
 
+    //this method takes in a set and removes all squares that don't exist on the chess board
     private void removeOutOfBounds(Set<Square> moves){
         Set<Square> outofBounds = new HashSet<>();
         for(Square move : moves){
@@ -247,6 +278,7 @@ public class Board {
         }
     }
 
+    //this method converts the current board state into the first section of a string in Forsyth-Edwards Notation and returns that
     public String boardToFENShort(){
         String FEN = "";
         int nullCounter = 0;
@@ -275,6 +307,7 @@ public class Board {
         return FEN.substring(0, FEN.length() - 1);
     }
 
+    //this method converts the current board state into the full Forsyth-Edwards Notation string and returns that
     public String boardToFENFull(){
         String fullFEN = boardToFENShort();
         fullFEN += " " + (whiteTurn ? "w" : "b");
@@ -304,6 +337,7 @@ public class Board {
         return fullFEN;
     }
 
+    //this method returns the board as a string that is formatted in a manner that is similar to a chess board
     public String toString(){
         String boardString = "";
         if(whiteTurn){
@@ -377,6 +411,7 @@ public class Board {
         return boardString;
     }
 
+    //this method recalculates and updates all piece attacks
     public void calculateAttacks(){
         //calculating new attacks
         for(Piece piece : whitePieces){
@@ -433,13 +468,15 @@ public class Board {
         }
     }
 
+    //this overloaded method the inputted piece to the inputted square
+    //the overloads are for special occurence moves that require more information such as castling and promotions
     public void move(Piece piece, Square destination){
         int startFile = piece.square.file;
         int startRank = piece.square.rank;
         int endFile = destination.file;
         int endRank = destination.rank;
         //regular capture
-        if(board[endFile][endRank] != null){
+        if(board[endFile][endRank] != null && !(startFile == endFile && startRank == endRank)){
             Piece capturedPiece = board[endFile][endRank];
             if(whiteTurn){
                 blackPieces.remove(capturedPiece);
@@ -479,10 +516,10 @@ public class Board {
             }
         }
         
-        
+        board[startFile][startRank] = null;
         board[endFile][endRank] = piece;
         piece.square = new Square(endFile, endRank);
-        board[startFile][startRank] = null;
+        
 
 
         //updating king square
@@ -493,9 +530,9 @@ public class Board {
                 blackKingSquare = new Square(endFile, endRank);
             }
         }
-        calculateAttacks();
     }
 
+    //promotion moves
     public void move(Piece piece, Square destination, Piece promotionPiece){
         move(piece, destination);
         if((destination.rank == 0 || destination.rank == 7) && piece.pieceType == Piece.PieceType.PAWN){
@@ -510,6 +547,12 @@ public class Board {
                 blackControlledSquares.put(promotionPiece, new HashSet<Square>());
             }
         }
-        calculateAttacks();
+    }
+
+    //castling moves
+    public void move(Piece piece, Square destination, boolean isKingSide){
+        move(piece, destination);
+        move(isKingSide ? kingsideCastleRooks[whiteTurn ? 0 : 1] : queensideCastleRooks[whiteTurn ? 0 : 1], 
+        new Square(isKingSide ? Chess.KINGSIDE_CASTLE_FILE_ROOK : Chess.QUEENSIDE_CASTLE_FILE_ROOK, piece.square.rank));
     }
 }
