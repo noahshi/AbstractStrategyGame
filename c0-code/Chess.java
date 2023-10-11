@@ -7,27 +7,34 @@ import java.util.regex.*;
 //TODO:
 //finish writing game instructions
 
-//add resigning etc.
-//add crazyhouse & atomic
+//add crazyhouse
 
 //This is the class that creates and runs chess games. It implements the AbstractStrategyGame interface. 
 public class Chess implements AbstractStrategyGame{
     
     private Board board;
-
-    private int gameType; //0 for standard, 1 for chess960, 2 for crazyhouse, 3 for atomic
-
+    private int gameType = -1; //-1 for not chosen, 0 for standard, 1 for chess960, 2 for crazyhouse, 3 for atomic
     private Map<String, Integer> threeFoldCheck = new HashMap<>();
-
     private String startingFEN;
-    
-    private int winner;
+    private int winner = -1;
+    private boolean drawInitiated, drawInitiatedThisRound = false;
+
+    private Pattern coordinate = Pattern.compile("^[a-h][1-8][a-h][1-8](=[NBRQ])?$", Pattern.CASE_INSENSITIVE);
+    private Pattern algebraic = Pattern.compile(
+                "^([NBRQK])([a-h|1-8])?[x|@]?([a-h])([1-8])[+$#]?|([a-h]x|@)?([a-h])([1-8])(=[NBRQ]| ?e\\.p\\.)?[+$#]?|O-O(-O)?[+$#]?$");
+    private Pattern draw = Pattern.compile("^draw$", Pattern.CASE_INSENSITIVE);
+    private Pattern resign = Pattern.compile("^resign$", Pattern.CASE_INSENSITIVE);
 
     public static final String DEFAULT_BOARD_SETUP = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
     public static final int KINGSIDE_CASTLE_FILE = 6;
     public static final int KINGSIDE_CASTLE_FILE_ROOK = 5;
     public static final int QUEENSIDE_CASTLE_FILE = 2;
     public static final int QUEENSIDE_CASTLE_FILE_ROOK = 3;
+
+    public static final int DRAW = 0;
+    public static final int PLAYER_WHITE = 1;
+    public static final int PLAYER_BLACK = 2;
+
     public static final HashMap<Piece.PieceType, String> TYPE_TO_STRING = new HashMap<>(){{
         put(Piece.PieceType.PAWN, "P");
         put(Piece.PieceType.KNIGHT, "N");
@@ -36,6 +43,8 @@ public class Chess implements AbstractStrategyGame{
         put(Piece.PieceType.QUEEN, "Q");
         put(Piece.PieceType.KING, "K");
     }};
+
+    public static final String[] VARIANTS = new String[]{"STANDARD", "CHESS960", "CRAZYHOUSE", "ATOMIC"};
 
     
 
@@ -72,11 +81,22 @@ public class Chess implements AbstractStrategyGame{
 
     //returns a string that either asks for a game type if a game type has not been selected yet 
     //or a string that represents the current state of the chess board
+    //or a string that contains the starting position, the moves made, and the result if the game is over
     public String toString(){
+        if(isGameOver()){
+            return board.toString() + "\n" + "VARIANT: " + VARIANTS[gameType] + "\n" + getMoves();
+        }
         if(gameType >= 0){
-        return board.toString();
+        
+            return board.toString() + 
+                (drawInitiated ? "\nPlayer " + getNextPlayer() + " has offered a draw. \nType \"draw\" to accept, play a move to decline." : "");
+        
         } else{ 
-            return "Enter the variant you want to play. \n0 for STANDARD \n1 for CHESS960 \n2 for CRAZYHOUSE \n3 for ATOMIC";
+            String variantChoice = "Enter the variant you want to play.";
+             for(int i = 0; i < VARIANTS.length; i++){
+                variantChoice += "\n" + i + " for " + VARIANTS[i];
+             }
+             return variantChoice;
         }
     }
 
@@ -92,7 +112,7 @@ public class Chess implements AbstractStrategyGame{
 
     //returns either 1 or 2 based on which player's turn it is
     public int getNextPlayer(){
-        return board.whiteTurn ? 1 : 2;
+        return board.whiteTurn ? PLAYER_WHITE : PLAYER_BLACK;
     }
 
 
@@ -104,22 +124,28 @@ public class Chess implements AbstractStrategyGame{
     //Use algebraic notation to differentiate when that occurs because the coordinate notation system does not support such move overlaps
     //If an exception is not thrown, the move will be played on the board
     public void makeMove(Scanner input){
-
+        drawInitiatedThisRound = false;
+        String move = input.nextLine();
         if(gameType < 0){
-            String typeString = input.nextLine();
-            int type = Integer.parseInt(typeString);
+            int type = Integer.parseInt(move);
             if(type > 3 || type < 0){
                 throw new IllegalArgumentException("There are only 4 game types, numbered from 0-3.");
             }
-
             gameType = type;
             setUpBoard(gameType);
-        } else {
-            String move = input.nextLine();
+        } else if (resign.matcher(move).matches()){
+            winner = board.whiteTurn ? PLAYER_BLACK : PLAYER_WHITE;
+            board.pgn += board.whiteTurn ? "0-1" : "1-0";
+            
+        } else if(draw.matcher(move).matches() && drawInitiated){
+            winner = DRAW;
+            board.pgn += " 1/2-1/2";
 
-            Pattern coordinate = Pattern.compile("^[a-h][1-8][a-h][1-8](=[NBRQ])?$", Pattern.CASE_INSENSITIVE);
-            Pattern algebraic = Pattern.compile(
-                "^([NBRQK])([a-h|1-8])?[x|@]?([a-h])([1-8])[+$#]?|([a-h]x|@)?([a-h])([1-8])(=[NBRQ]| ?e\\.p\\.)?[+$#]?|O-O(-O)?[+$#]?$");
+        } else {
+            if (draw.matcher(move).matches()){
+                drawInitiatedThisRound = true;
+                move = input.nextLine();
+            }
 
             Matcher cdnMatcher = coordinate.matcher(move);
             Matcher algMatcher = algebraic.matcher(move);
@@ -335,21 +361,48 @@ public class Chess implements AbstractStrategyGame{
             }
             
             
-            board.pgn += move.substring(2);
+            boolean isCapture = false;
 
             if(promotionPiece != null){
-                board.move(piece, new Square(endFile, endRank), promotionPiece);
+                isCapture = board.move(piece, new Square(endFile, endRank), promotionPiece);
+                board.pgn += move.substring(2);
                 board.pgn += "=" + TYPE_TO_STRING.get(promotionPiece.pieceType);
             } else if(move.contains("O-O") || (piece.pieceType == Piece.PieceType.KING && Math.abs(startFile - endFile) > 1)){
-                board.move(piece, new Square(endFile, endRank), isKingSideCastle);
+                isCapture = board.move(piece, new Square(endFile, endRank), isKingSideCastle);
+                
+                if(isKingSideCastle){
+                    board.pgn += "O-O";
+                } else {
+                    board.pgn += "O-O-O";
+                }
             } else {
-                board.move(piece, new Square(endFile, endRank));
                 if(piece.pieceType != Piece.PieceType.PAWN){
                     board.pgn += TYPE_TO_STRING.get(piece.pieceType);
+                }
+                isCapture = board.move(piece, new Square(endFile, endRank));
+                
+                board.pgn += new Square(endFile, endRank).toString();
+            }
+
+            if(gameType == 3 && isCapture){
+                int kingsExplodeIndex = board.atomicCaptureExplosion(new Square(endFile, endRank));
+                if(kingsExplodeIndex == 1){
+                    winner = PLAYER_BLACK;
+                    board.pgn += " 0-1";
+
+                } else if (kingsExplodeIndex == 2){
+                    winner = PLAYER_WHITE;
+                    board.pgn += " 1-0";
+
+                } else if(kingsExplodeIndex == 3){
+                    winner = DRAW;
+                    board.pgn += " 1/2-1/2";
                 }
             }
 
             board.calculateAttacks();
+
+            drawInitiated = drawInitiatedThisRound;
 
             //removing castling rights if king or rook moved
             if(piece.pieceType == Piece.PieceType.KING){
@@ -390,6 +443,7 @@ public class Chess implements AbstractStrategyGame{
             if(board.fiftyMoveRuleCounter > 100){
                 winner = 0;
                 board.pgn += "$";
+                board.pgn += " 1/2-1/2";
             }
 
             //3 FOLD REPETITION
@@ -401,6 +455,7 @@ public class Chess implements AbstractStrategyGame{
                 if(threeFoldCheck.get(currentFEN) == 3){
                     winner = 0;
                     board.pgn += "$";
+                    board.pgn += " 1/2-1/2";
                 }
             }
 
@@ -413,11 +468,13 @@ public class Chess implements AbstractStrategyGame{
 
             if(availableMoves == 0){
                 if(board.playerInCheck[board.whiteTurn ? 0 : 1]){ 
-                    winner = board.whiteTurn ? 2 : 1; //whiteTurn boolean was inverted above so this ternary operator must be flipped
+                    winner = board.whiteTurn ? PLAYER_BLACK : PLAYER_WHITE; //whiteTurn boolean was inverted above so this ternary operator must be flipped
                     board.pgn += "#";
+                    board.pgn += board.whiteTurn ? "0-1" : "1-0";
                 } else {
-                    winner = 0;
+                    winner = DRAW;
                     board.pgn += "$";
+                    board.pgn += " 1/2-1/2";
                 }
             }
             //checking for end scenarios above
@@ -429,10 +486,6 @@ public class Chess implements AbstractStrategyGame{
 
             //if(enPassantSquare != null)
             //    System.out.println(enPassantSquare[0] + " " + enPassantSquare[1]);
-        }
-
-        if (winner >= 0){
-            System.out.println(getMoves());
         }
     }
 

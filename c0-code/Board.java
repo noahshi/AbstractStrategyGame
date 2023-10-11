@@ -5,11 +5,11 @@ import java.util.*;
 public class Board {
     public final int BOARD_SIZE = 8;
     public Piece[][] board = new Piece[BOARD_SIZE][BOARD_SIZE];
+
     public List<Piece> whitePieces = new ArrayList<>();
     public List<Piece> blackPieces = new ArrayList<>();
     public Map<Piece, Set<Square>> whiteControlledSquares = new HashMap<>();
     public Map<Piece, Set<Square>> blackControlledSquares = new HashMap<>();
-
     public boolean[] whiteCastlingRights = new boolean[2];
     public boolean[] blackCastlingRights = new boolean[2];
 
@@ -22,10 +22,10 @@ public class Board {
     
     public String pgn = "";
 
-    public Square whiteKingSquare;
-    public Square blackKingSquare;
+    public Square whiteKingSquare, blackKingSquare;
     public Piece[] kingsideCastleRooks = new Piece[2];
     public Piece[] queensideCastleRooks = new Piece[2];
+
 
     //creates a board based on the input string
     //the input string must be given in Forsyth-Edwards Notation or an exception will be thrown
@@ -470,11 +470,13 @@ public class Board {
 
     //this overloaded method the inputted piece to the inputted square
     //the overloads are for special occurence moves that require more information such as castling and promotions
-    public void move(Piece piece, Square destination){
+    //returns true if the move was capture, false if it wasnt
+    public boolean move(Piece piece, Square destination){
         int startFile = piece.square.file;
         int startRank = piece.square.rank;
         int endFile = destination.file;
         int endRank = destination.rank;
+        boolean isCapture = false;
         //regular capture
         if(board[endFile][endRank] != null && !(startFile == endFile && startRank == endRank)){
             Piece capturedPiece = board[endFile][endRank];
@@ -486,7 +488,11 @@ public class Board {
                 whiteControlledSquares.remove(capturedPiece);
             }
             fiftyMoveRuleCounter = -1;
+            if(piece.pieceType == Piece.PieceType.PAWN){
+                pgn += (char)(startFile + (int)'a');
+            }
             pgn += "x";
+            isCapture = true;
         }
 
         enPassantSquare = null;
@@ -502,17 +508,17 @@ public class Board {
             //en passant capture
             if(endFile != startFile && board[endFile][endRank] == null){
                 Piece capturedPiece = board[endFile][endRank + (whiteTurn ? 1: -1)];
-            if(whiteTurn){
-                blackPieces.remove(capturedPiece);
-                blackControlledSquares.remove(capturedPiece);
-
-            } else {
-                whitePieces.remove(capturedPiece);
-                whiteControlledSquares.remove(capturedPiece);
-            }
-            board[endFile][endRank + (whiteTurn ? 1: -1)] = null;
-            fiftyMoveRuleCounter = -1;
-            pgn += "x";
+                if(whiteTurn){
+                    blackPieces.remove(capturedPiece);
+                    blackControlledSquares.remove(capturedPiece);
+                } else {
+                    whitePieces.remove(capturedPiece);
+                    whiteControlledSquares.remove(capturedPiece);
+                }
+                board[endFile][endRank + (whiteTurn ? 1: -1)] = null;
+                fiftyMoveRuleCounter = -1;
+                pgn += (char)(startFile + (int)'a') + "x";
+                isCapture = true;
             }
         }
         
@@ -530,11 +536,13 @@ public class Board {
                 blackKingSquare = new Square(endFile, endRank);
             }
         }
+
+        return isCapture;
     }
 
     //promotion moves
-    public void move(Piece piece, Square destination, Piece promotionPiece){
-        move(piece, destination);
+    public boolean move(Piece piece, Square destination, Piece promotionPiece){
+        boolean isCapture = move(piece, destination);
         if((destination.rank == 0 || destination.rank == 7) && piece.pieceType == Piece.PieceType.PAWN){
             board[destination.file][destination.rank] = promotionPiece;
             if(whiteTurn){
@@ -547,12 +555,62 @@ public class Board {
                 blackControlledSquares.put(promotionPiece, new HashSet<Square>());
             }
         }
+        return isCapture;
     }
 
     //castling moves
-    public void move(Piece piece, Square destination, boolean isKingSide){
-        move(piece, destination);
+    public boolean move(Piece piece, Square destination, boolean isKingSide){
+        boolean isCapture = move(piece, destination);
         move(isKingSide ? kingsideCastleRooks[whiteTurn ? 0 : 1] : queensideCastleRooks[whiteTurn ? 0 : 1], 
         new Square(isKingSide ? Chess.KINGSIDE_CASTLE_FILE_ROOK : Chess.QUEENSIDE_CASTLE_FILE_ROOK, piece.square.rank));
+
+        return isCapture;
+    }
+
+    //creates a 3x3 explosion around a square and removes all pieces (not pawns) in its radius
+    //will return 0 if both kings are alive, 1 if the white king blew up, 2 if the black king blew up, or 3 if they both blew up
+    public int atomicCaptureExplosion(Square capture){
+        Piece piece;
+        Piece capturer = board[capture.file][capture.rank];
+        int kingExploded = 0; 
+
+        Set<Square> explosion = getPossibleKingMoves(capture);
+        for(Square square : explosion){
+            piece = board[square.file][square.rank];
+            if(piece != null && piece.pieceType != Piece.PieceType.PAWN){
+                if(piece.isWhite){
+                    if(piece.pieceType == Piece.PieceType.KING){
+                        kingExploded += 1;
+                    }
+                    whitePieces.remove(piece);
+                    whiteControlledSquares.remove(piece);
+                } else {
+                    blackPieces.remove(piece);
+                    blackControlledSquares.remove(piece);
+                    if(piece.pieceType == Piece.PieceType.KING){
+                        kingExploded += 2;
+                    }
+                }
+                board[square.file][square.rank] = null;
+            }
+        }
+        if(capturer.isWhite){
+            whitePieces.remove(capturer);
+            whiteControlledSquares.remove(capturer);
+
+            if(capturer.pieceType == Piece.PieceType.KING){
+                kingExploded += 1;
+            }
+        } else {
+            blackPieces.remove(capturer);
+            blackControlledSquares.remove(capturer);
+
+            if(capturer.pieceType == Piece.PieceType.KING){
+                kingExploded += 2;
+            }
+        }
+        board[capture.file][capture.rank] = null;
+
+        return kingExploded;
     }
 }
