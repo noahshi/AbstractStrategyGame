@@ -8,6 +8,9 @@ import java.util.regex.*;
 //finish writing game instructions
 
 //add crazyhouse
+//add exception throwing the board constructor
+
+//move all initializations to constructors >:(
 
 //This is the class that creates and runs chess games. It implements the AbstractStrategyGame interface. 
 public class Chess implements AbstractStrategyGame{
@@ -19,23 +22,11 @@ public class Chess implements AbstractStrategyGame{
     private int winner = -1;
     private boolean drawInitiated, drawInitiatedThisRound = false;
 
-    private Pattern coordinate = Pattern.compile("^[a-h][1-8][a-h][1-8](=[NBRQ])?$", Pattern.CASE_INSENSITIVE);
-    private Pattern algebraic = Pattern.compile(
+    private Pattern coordinateRegex = Pattern.compile("^[a-h][1-8][a-h][1-8](=[NBRQ])?$", Pattern.CASE_INSENSITIVE);
+    private Pattern algebraicRegex = Pattern.compile(
                 "^([NBRQK])([a-h|1-8])?[x|@]?([a-h])([1-8])[+$#]?|([a-h]x|@)?([a-h])([1-8])(=[NBRQ]| ?e\\.p\\.)?[+$#]?|O-O(-O)?[+$#]?$");
-    private Pattern draw = Pattern.compile("^draw$", Pattern.CASE_INSENSITIVE);
-    private Pattern resign = Pattern.compile("^resign$", Pattern.CASE_INSENSITIVE);
-
-    
-    //constants to make the code easier to read
-    private static final String DEFAULT_BOARD_SETUP = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-    private static final int KINGSIDE_CASTLE_FILE = 6;
-    private static final int KINGSIDE_CASTLE_FILE_ROOK = 5;
-    private static final int QUEENSIDE_CASTLE_FILE = 2;
-    private static final int QUEENSIDE_CASTLE_FILE_ROOK = 3;
-
-    private static final int DRAW = 0;
-    private static final int PLAYER_WHITE = 1;
-    private static final int PLAYER_BLACK = 2;
+    private Pattern drawRegex = Pattern.compile("^draw$", Pattern.CASE_INSENSITIVE);
+    private Pattern resignRegex = Pattern.compile("^resign$", Pattern.CASE_INSENSITIVE);
 
     private enum PieceType {
             PAWN,
@@ -45,6 +36,18 @@ public class Chess implements AbstractStrategyGame{
             QUEEN,
             KING
     }
+    
+    //constants to make the code easier to read
+    private static final int BOARD_SIZE = 8;
+    private static final String DEFAULT_BOARD_SETUP = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    private static final int KINGSIDE_CASTLE_FILE = 6;
+    private static final int KINGSIDE_CASTLE_FILE_ROOK = 5;
+    private static final int QUEENSIDE_CASTLE_FILE = 2;
+    private static final int QUEENSIDE_CASTLE_FILE_ROOK = 3;
+
+    private static final int DRAW = 0;
+    private static final int PLAYER_WHITE = 1;
+    private static final int PLAYER_BLACK = 2;
 
     private static final HashMap<PieceType, String> TYPE_TO_STRING = new HashMap<>(){{
         put(PieceType.PAWN, "P");
@@ -57,13 +60,16 @@ public class Chess implements AbstractStrategyGame{
 
     private static final String[] VARIANTS = new String[]{"STANDARD", "CHESS960", "CRAZYHOUSE", "ATOMIC"};
 
-
-    //creates a chess game with a game type of -1
+    //Behavior
+    //  - Creates a chess game and will set up the default board
     public Chess(){
         setUpBoard(-1);
     }
 
-    //takes in the game type and sets up the board based off that input
+    //Parameters:
+    //  - The variant as an integer where 0 is standard chess, 1 is Chess960, 2 is Crazyhouse, and 3 is atomic
+    //Behavior:
+    //  - Sets up the board based off the variant
     private void setUpBoard(int gameType){
         if(gameType != 1){
             startingFEN = DEFAULT_BOARD_SETUP;
@@ -81,16 +87,19 @@ public class Chess implements AbstractStrategyGame{
     }
 
 
-    //returns game instructions -- UNFINISHED --
+    //Returns:
+    //  - Game instructions -- UNFINISHED --
     public String instructions(){
         return "White moves first. Type in your move in either coordinate or algebraic notation.\n" +
                "Pieces are labeled with their respective names in algebraic notation.\n" +
                "more rules dsfsefjsodiflkenlsf";
     }
 
-    //returns a string that either asks for a game type if a game type has not been selected yet 
-    //or a string that represents the current state of the chess board
-    //or a string that contains the starting position, the moves made, and the result if the game is over
+    //Returns:
+    //  - A string that either asks for a game type if a game type has not been selected yet 
+    //  - A string that represents the current state of the chess board
+    //  - A string that represents the final state of the board, a string the starting position 
+    //    in Forsyth-Edwards Notation, the moves made, and the result if the game is over
     public String toString(){
         if(isGameOver()){
             return board.toString() + "\n" + "VARIANT: " + VARIANTS[gameType] + "\n" + getMoves();
@@ -109,29 +118,41 @@ public class Chess implements AbstractStrategyGame{
         }
     }
 
-    //checks if the game is over and returns true if it is
+    //Returns:
+    //  - true if the game is over
+    //  - false if the game isn't over
     public boolean isGameOver(){
         return winner != -1;
     }
 
-    //returns the winner if there is one, 0 if it's a draw, and -1 if the game is still ongoing
+    //Returns:
+    //  - The winner if there is one
+    //  - 0 if it's a draw
+    //  - -1 if the game is still ongoing
     public int getWinner(){
         return winner;
     }
 
-    //returns either 1 or 2 based on which player's turn it is
+    //Returns: 
+    //  - 1 if it's Player 1's turn
+    //  - 2 if it's Player 2's turn
+    //  - -1 if the game is over
     public int getNextPlayer(){
+        if(isGameOver())
+            return -1;
+
         return board.whiteTurn ? PLAYER_WHITE : PLAYER_BLACK;
     }
 
-
-    //Takes a string input
-    //If game type has not been selected, the string input must be an integer from 0-3, otherwise an exception will be thrown
-    //If game type has been selected, the string input must either be in coordinate or algebraic notation
-    //Illegal and nonexistent moves with throw exceptions
-    //In coordinate notation, if a king move and castling end up on the same square, the normal king move takes priority
-    //Use algebraic notation to differentiate when that occurs because the coordinate notation system does not support such move overlaps
-    //If an exception is not thrown, the move will be played on the board
+    //Parameters:
+    // - This method takes a string input from the terminal
+    //Behavior:
+    //  - In coordinate notation, if a king move and castling end up on the same square, the normal king move takes priority
+    //  - If an exception is not thrown, the move will be played on the board
+    //Exceptions:
+    //  - If game type has not been selected, the string input must be an integer from 0-3, otherwise an exception will be thrown
+    //  - If game type has been selected, the string input must either be in coordinate or algebraic notation
+    //  - Illegal and nonexistent moves with throw exceptions
     public void makeMove(Scanner input){
         drawInitiatedThisRound = false;
         String move = input.nextLine();
@@ -142,22 +163,22 @@ public class Chess implements AbstractStrategyGame{
             }
             gameType = type;
             setUpBoard(gameType);
-        } else if (resign.matcher(move).matches()){
+        } else if (resignRegex.matcher(move).matches()){
             winner = board.whiteTurn ? PLAYER_BLACK : PLAYER_WHITE;
-            board.pgn += board.whiteTurn ? "0-1" : "1-0";
+            board.portableGameNotation += board.whiteTurn ? "0-1" : "1-0";
             
-        } else if(draw.matcher(move).matches() && drawInitiated){
+        } else if(drawRegex.matcher(move).matches() && drawInitiated){
             winner = DRAW;
-            board.pgn += " 1/2-1/2";
+            board.portableGameNotation += " 1/2-1/2";
 
         } else {
-            if (draw.matcher(move).matches()){
+            if (drawRegex.matcher(move).matches()){
                 drawInitiatedThisRound = true;
                 move = input.nextLine();
             }
 
-            Matcher cdnMatcher = coordinate.matcher(move);
-            Matcher algMatcher = algebraic.matcher(move);
+            Matcher cdnMatcher = coordinateRegex.matcher(move);
+            Matcher algMatcher = algebraicRegex.matcher(move);
             
             boolean legalMove = false;
             boolean isKingSideCastle = false;
@@ -171,9 +192,9 @@ public class Chess implements AbstractStrategyGame{
 
             if(cdnMatcher.matches()){
                 startFile = (int)move.charAt(0) - (int)'a';
-                startRank = board.BOARD_SIZE - Character.getNumericValue(move.charAt(1));
+                startRank = BOARD_SIZE - Character.getNumericValue(move.charAt(1));
                 endFile = (int)move.charAt(2) - (int)'a';
-                endRank = board.BOARD_SIZE - Character.getNumericValue(move.charAt(3));
+                endRank = BOARD_SIZE - Character.getNumericValue(move.charAt(3));
 
                 if(cdnMatcher.group(1) != null){
                     if(board.board[startFile][startRank].pieceType != PieceType.PAWN){
@@ -366,7 +387,7 @@ public class Chess implements AbstractStrategyGame{
             }
 
             if(board.whiteTurn){
-                board.pgn += board.moveNumber + ".";
+                board.portableGameNotation += board.moveNumber + ".";
             }
             
             
@@ -374,38 +395,38 @@ public class Chess implements AbstractStrategyGame{
 
             if(promotionPiece != null){
                 isCapture = board.move(piece, new Square(endFile, endRank), promotionPiece);
-                board.pgn += move.substring(2);
-                board.pgn += "=" + TYPE_TO_STRING.get(promotionPiece.pieceType);
+                board.portableGameNotation += move.substring(2);
+                board.portableGameNotation += "=" + TYPE_TO_STRING.get(promotionPiece.pieceType);
             } else if(move.contains("O-O") || (piece.pieceType == PieceType.KING && Math.abs(startFile - endFile) > 1)){
                 isCapture = board.move(piece, new Square(endFile, endRank), isKingSideCastle);
                 
                 if(isKingSideCastle){
-                    board.pgn += "O-O";
+                    board.portableGameNotation += "O-O";
                 } else {
-                    board.pgn += "O-O-O";
+                    board.portableGameNotation += "O-O-O";
                 }
             } else {
                 if(piece.pieceType != PieceType.PAWN){
-                    board.pgn += TYPE_TO_STRING.get(piece.pieceType);
+                    board.portableGameNotation += TYPE_TO_STRING.get(piece.pieceType);
                 }
                 isCapture = board.move(piece, new Square(endFile, endRank));
                 
-                board.pgn += new Square(endFile, endRank).toString();
+                board.portableGameNotation += new Square(endFile, endRank).toString();
             }
 
             if(gameType == 3 && isCapture){
                 int kingsExplodeIndex = board.atomicCaptureExplosion(new Square(endFile, endRank));
                 if(kingsExplodeIndex == 1){
                     winner = PLAYER_BLACK;
-                    board.pgn += " 0-1";
+                    board.portableGameNotation += " 0-1";
 
                 } else if (kingsExplodeIndex == 2){
                     winner = PLAYER_WHITE;
-                    board.pgn += " 1-0";
+                    board.portableGameNotation += " 1-0";
 
                 } else if(kingsExplodeIndex == 3){
                     winner = DRAW;
-                    board.pgn += " 1/2-1/2";
+                    board.portableGameNotation += " 1/2-1/2";
                 }
             }
 
@@ -451,8 +472,8 @@ public class Chess implements AbstractStrategyGame{
             //FIFTY MOVE RULE
             if(board.fiftyMoveRuleCounter > 100){
                 winner = 0;
-                board.pgn += "$";
-                board.pgn += " 1/2-1/2";
+                board.portableGameNotation += "$";
+                board.portableGameNotation += " 1/2-1/2";
             }
 
             //3 FOLD REPETITION
@@ -463,8 +484,8 @@ public class Chess implements AbstractStrategyGame{
                 threeFoldCheck.replace(currentFEN, threeFoldCheck.get(currentFEN) + 1);
                 if(threeFoldCheck.get(currentFEN) == 3){
                     winner = 0;
-                    board.pgn += "$";
-                    board.pgn += " 1/2-1/2";
+                    board.portableGameNotation += "$";
+                    board.portableGameNotation += " 1/2-1/2";
                 }
             }
 
@@ -478,34 +499,36 @@ public class Chess implements AbstractStrategyGame{
             if(availableMoves == 0){
                 if(board.playerInCheck[board.whiteTurn ? 0 : 1]){ 
                     winner = board.whiteTurn ? PLAYER_BLACK : PLAYER_WHITE; //whiteTurn boolean was inverted above so this ternary operator must be flipped
-                    board.pgn += "#";
-                    board.pgn += board.whiteTurn ? "0-1" : "1-0";
+                    board.portableGameNotation += "#";
+                    board.portableGameNotation += board.whiteTurn ? "0-1" : "1-0";
                 } else {
                     winner = DRAW;
-                    board.pgn += "$";
-                    board.pgn += " 1/2-1/2";
+                    board.portableGameNotation += "$";
+                    board.portableGameNotation += " 1/2-1/2";
                 }
             }
             //checking for end scenarios above
 
             if(board.playerInCheck[board.whiteTurn ? 1 : 0] && winner == -1){
-                board.pgn += "+";
+                board.portableGameNotation += "+";
             }
-            board.pgn += " ";
+            board.portableGameNotation += " ";
 
             //if(enPassantSquare != null)
             //    System.out.println(enPassantSquare[0] + " " + enPassantSquare[1]);
         }
     }
 
-    //returns the starting position as a string followed by all the moves played
+    //Returns: 
+    //  - The starting position as a string in Forsyth-Edwards Notation followed by all the moves played
     private String getMoves(){
-        return startingFEN += "\n" + board.pgn;
+        return startingFEN += "\n" + board.portableGameNotation;
     }
 
     
 
-    //returns all the legal moves that a player can play for their turn
+    //Returns: 
+    // - All the legal moves that a player can play for their turn
     private Map<Piece, Set<Square>> getLegalMoves(){
         Map<Piece, Set<Square>> legalMoves = new HashMap<>();
         String currentFEN = board.boardToFENFull();
@@ -625,6 +648,10 @@ public class Chess implements AbstractStrategyGame{
         return legalMoves;
     }
 
+    //Returns
+    //  - A string with the order of the 8 back rank pieces randomized with a few restaints
+    //        - The king must be between the 2 rooks
+    //        - The bishops must be on opposite colors
     private String chess960Randomizer(){
         String[] pieces = new String[8];
         List<Integer> indexes = Arrays.asList(0,1,2,3,4,5,6,7);
@@ -680,7 +707,6 @@ public class Chess implements AbstractStrategyGame{
 
     //This helper class contains all the information related to a board state
     private class Board {
-        private final int BOARD_SIZE = 8;
         private Piece[][] board = new Piece[BOARD_SIZE][BOARD_SIZE];
 
         private List<Piece> whitePieces = new ArrayList<>();
@@ -701,15 +727,19 @@ public class Chess implements AbstractStrategyGame{
         private int fiftyMoveRuleCounter;
         private int moveNumber;
         
-        private String pgn = "";
+        private String portableGameNotation = "";
 
         private Square whiteKingSquare, blackKingSquare;
         private Piece[] kingsideCastleRooks = new Piece[2];
         private Piece[] queensideCastleRooks = new Piece[2];
 
 
-        //creates a board based on the input string
-        //the input string must be given in Forsyth-Edwards Notation or an exception will be thrown
+        //Parameters:
+        // - String in Forsyth-Edwards Notation
+        //Behavior:
+        //  - Creates a board based on the input string
+        //Exceptions:
+        //  - Throws an exception if the string is not in Forsyth-Edwards Notation
         private Board(String fen){
 
             String[] temp = fen.split(" ");
@@ -828,8 +858,13 @@ public class Chess implements AbstractStrategyGame{
             
         }
 
-        //it takes in a square and returns a set of all the possible squares a pawn can move to if it was located on the input square
-        //the boolean determines which way the pawn is facing
+        //Parameters:
+        //  - Square where the imaginary pawn will be placed
+        //  - Boolean to determine which way the pawn faces: true for facing toward black, false for facing toward white
+        //Behavior:
+        //  - Calculates the set of all the possible squares a pawn can move to if it was located on the input square
+        //Returns:
+        //  - Returns the set of moves calculated in its behavior
         private Set<Square> getPossiblePawnMoves(Square square, boolean isWhite){
             Set<Square> moves = new HashSet<>();
             int direction = isWhite ? -1 : 1;
@@ -849,8 +884,13 @@ public class Chess implements AbstractStrategyGame{
             return moves;
         }
 
-        //it takes in a square and returns a set of all the squares a pawn would control if it was located on the input square
-        //the boolean input determines which way the pawn faces
+        //Parameters:
+        //  - Square where the imaginary pawn will be placed
+        //  - Boolean to determine which way the pawn faces: true for facing toward black, false for facing toward white
+        //Behavior:
+        //  - Calculates the set of all the possible squares a pawn would control it was located on the input square
+        //Returns:
+        //  - Returns the set of moves calculated in its behavior
         private Set<Square> getPossiblePawnCaptures(Square square, boolean isWhite){
             Set<Square> moves = new HashSet<>();
             int direction = isWhite ? -1 : 1;
@@ -864,7 +904,12 @@ public class Chess implements AbstractStrategyGame{
             return moves;
         }
 
-        //it takes in a square and returns a set of all the squares a knight would control if it was located on the input square
+        //Parameters:
+        //  - Square where the imaginary knight will be placed
+        //Behavior:
+        //  - Calculates the set of all the possible squares a knight would control it was located on the input square
+        //Returns:
+        //  - Returns the set of moves calculated in its behavior
         private Set<Square> getPossibleKnightMoves(Square square){
             Set<Square> moves = new HashSet<>();
             for(int i = 1; i <= 2; i++){
@@ -878,7 +923,12 @@ public class Chess implements AbstractStrategyGame{
             return moves;
         }
 
-        //it takes in a square and returns a set of all the squares a bishop would control if it was located on the input square
+        //Parameters:
+        //  - Square where the imaginary bishop will be placed
+        //Behavior:
+        //  - Calculates the set of all the possible squares a bishop would control it was located on the input square
+        //Returns:
+        //  - Returns the set of moves calculated in its behavior
         private Set<Square> getPossibleBishopMoves(Square square){
             Set<Square> moves = new HashSet<>();
             moves.addAll(getDirectionalAttacks(square, 1, 1));
@@ -888,7 +938,12 @@ public class Chess implements AbstractStrategyGame{
             return moves;
         }
 
-        //it takes in a square and returns a set of all the squares a rook would control if it was located on the input square
+        //Parameters:
+        //  - Square where the imaginary rook will be placed
+        //Behavior:
+        //  - Calculates the set of all the possible squares a rook would control it was located on the input square
+        //Returns:
+        //  - Returns the set of moves calculated in its behavior
         private Set<Square> getPossibleRookMoves(Square square){
             Set<Square> moves = new HashSet<>();
             moves.addAll(getDirectionalAttacks(square, 1, 0));
@@ -899,7 +954,12 @@ public class Chess implements AbstractStrategyGame{
             return moves;
         }
 
-        //it takes in a square and returns a set of all the squares a queen would control if it was located on the input square
+        //Parameters:
+        //  - Square where the imaginary queen will be placed
+        //Behavior:
+        //  - Calculates the set of all the possible squares a queen would control it was located on the input square
+        //Returns:
+        //  - Returns the set of moves calculated in its behavior
         private Set<Square> getPossibleQueenMoves(Square square){
             Set<Square> moves = new HashSet<>();
             moves.addAll(getPossibleBishopMoves(square));
@@ -907,7 +967,12 @@ public class Chess implements AbstractStrategyGame{
             return moves;
         }
 
-        //it takes in a square and returns a set of all the squares a king would control if it was located on the input square
+        //Parameters:
+        //  - Square where the imaginary king will be placed
+        //Behavior:
+        //  - Calculates the set of all the possible squares a king would control it was located on the input square
+        //Returns:
+        //  - Returns the set of moves calculated in its behavior
         private Set<Square> getPossibleKingMoves(Square square){
             Set<Square> moves = new HashSet<>();
             for(int fileDirection = -1; fileDirection <= 1; fileDirection++){
@@ -922,9 +987,15 @@ public class Chess implements AbstractStrategyGame{
             return moves;
         }
 
-        //it takes in a square and 2 directions and moves in those 2 directions until it reaches another pieces or reaches the edge of the board
-        //it then returns a set of all the squares it covered
-        //this method is used to determine bishop, rook, and queen attacks
+        //Parameters:
+        //  - Square where the imaginary piece will be placed
+        //  - A file direction and a rank direction to create a total of 8 possible directions of movement
+        //Behavior:
+        //  - Calculates the set of all the possible squares a piece would control in the direction specified by the inputs
+        //Exceptions:
+        //  - Will throw an exception if the file direction and rank direction are not between -1 and 1 inclusive
+        //Returns:
+        //  - Returns the set of moves calculated in its behavior
         private Set<Square> getDirectionalAttacks(Square square, int fileDirection, int rankDirection){
             if(fileDirection > 1 || fileDirection < -1 || rankDirection > 1 || rankDirection < -1){
                 throw new InvalidParameterException("Directions must be between -1 and 1 inclusive.");
@@ -946,7 +1017,10 @@ public class Chess implements AbstractStrategyGame{
             return attacks;
         }
 
-        //this method takes in a set and removes all squares that don't exist on the chess board
+        //Parameters:
+        //  - Takes in a set of squares as possible moves
+        //Behavior:
+        //  - removes the squares that would land the piece out of bounds
         private void removeOutOfBounds(Set<Square> moves){
             Set<Square> outofBounds = new HashSet<>();
             for(Square move : moves){
@@ -959,7 +1033,10 @@ public class Chess implements AbstractStrategyGame{
             }
         }
 
-        //this method converts the current board state into the first section of a string in Forsyth-Edwards Notation and returns that
+        //Behavior:
+        //  - Converts the current board state into the first section of a string in Forsyth-Edwards Notation
+        //Returns:
+        //  - returns the converted string
         private String boardToFENShort(){
             String FEN = "";
             int nullCounter = 0;
@@ -988,7 +1065,10 @@ public class Chess implements AbstractStrategyGame{
             return FEN.substring(0, FEN.length() - 1);
         }
 
-        //this method converts the current board state into the full Forsyth-Edwards Notation string and returns that
+        //Behavior:
+        //  - Converts the current board state into the full Forsyth-Edwards Notation string
+        //Returns:
+        //  - Returns the converted string
         private String boardToFENFull(){
             String fullFEN = boardToFENShort();
             fullFEN += " " + (whiteTurn ? "w" : "b");
@@ -1018,7 +1098,11 @@ public class Chess implements AbstractStrategyGame{
             return fullFEN;
         }
 
-        //this method returns the board as a string that is formatted in a manner that is similar to a chess board
+        //Behavior:
+        //  - Converts the board into a string that is formatted in a manner that is similar to a chess board
+        //  - Flips the board based on which player it is so both players will play from their point of view
+        //Returns:
+        //  - Returns the converted string
         public String toString(){
             String boardString = "";
             if(whiteTurn){
@@ -1092,7 +1176,8 @@ public class Chess implements AbstractStrategyGame{
             return boardString;
         }
 
-        //this method recalculates and updates all piece attacks
+        //Behavior:
+        //  - This method recalculates and updates all the squares each piece attacks
         private void calculateAttacks(){
             //calculating new attacks
             for(Piece piece : whitePieces){
@@ -1149,9 +1234,21 @@ public class Chess implements AbstractStrategyGame{
             }
         }
 
-        //this overloaded method the inputted piece to the inputted square
-        //the overloads are for special occurence moves that require more information such as castling and promotions
-        //returns true if the move was capture, false if it wasnt
+        //Parameters:
+        //  - Piece that will be moves
+        //  - Destination square of that piece
+        //  - Piece to promote to (overloaded method)
+        //  - Side to castle to (overloaded method) 
+        //Behavior:
+        //  - Moves the inputted piece to the inputted square
+        //  - Removes captured pieces if they exist
+        //      - Adds those captured pieces to players inventory if the variant is Crazyhouse
+        //      - Creates a 3x3 explosion at the capture of the variant is Atomic
+        //  - Updates the Portable Game Notation of the board
+        //  - If the move is a promotion, promote the pawn to inputted promotion piece
+        //  - If the move is a castle, move the rook to the proper location as well
+        //Returns:
+        //  - returns true if the move was a capture, false if otherwise
         private boolean move(Piece piece, Square destination){
             int startFile = piece.square.file;
             int startRank = piece.square.rank;
@@ -1170,9 +1267,9 @@ public class Chess implements AbstractStrategyGame{
                 }
                 fiftyMoveRuleCounter = -1;
                 if(piece.pieceType == PieceType.PAWN){
-                    pgn += (char)(startFile + (int)'a');
+                    portableGameNotation += (char)(startFile + (int)'a');
                 }
-                pgn += "x";
+                portableGameNotation += "x";
                 isCapture = true;
             }
 
@@ -1201,7 +1298,7 @@ public class Chess implements AbstractStrategyGame{
                     }
                     board[endFile][endRank + (whiteTurn ? 1: -1)] = null;
                     fiftyMoveRuleCounter = -1;
-                    pgn += (char)(startFile + (int)'a') + "x";
+                    portableGameNotation += (char)(startFile + (int)'a') + "x";
                     isCapture = true;
                 }
             }
@@ -1251,7 +1348,10 @@ public class Chess implements AbstractStrategyGame{
             return isCapture;
         }
 
-        //orders the captured piece lists for crazyhouse
+        //Parameters:
+        //  - A set of pieces to be ordered
+        //Behavior:
+        //  - Orders the captured piece lists for crazyhouse in the order P,N,B,R,Q
         private void orderPieces(List<PieceType> pieceList){
             List<PieceType> orderedPieceList = new ArrayList<>();
             //pawns
@@ -1287,8 +1387,15 @@ public class Chess implements AbstractStrategyGame{
             pieceList = orderedPieceList;
         }
 
-        //creates a 3x3 explosion around a square and removes all pieces (not pawns) in its radius
-        //will return 0 if both kings are alive, 1 if the white king blew up, 2 if the black king blew up, or 3 if they both blew up
+        //Parameters:
+        //  - Square that the capture occured on
+        //Behavior:
+        //  - Creates a 3x3 explosion around a square and removes all pieces (not pawns) in its radius
+        //Returns:
+        //  - 0 if both kings are alive
+        //  - 1 if the white king blew up
+        //  - 2 if the black king blew up
+        //  - 3 if both kings blew up
         private int atomicCaptureExplosion(Square capture){
             Piece piece;
             Piece capturer = board[capture.file][capture.rank];
@@ -1342,6 +1449,12 @@ public class Chess implements AbstractStrategyGame{
         private final PieceType pieceType;
         private final boolean isWhite;
 
+        //Parameters:
+        // - Piece type
+        // - Piece color
+        // - Piece location
+        //Behavior:
+        //  - Creates new piece object based on the parameters
         private Piece(PieceType type, boolean isWhite, Square square){
             this.pieceType = type;
             this.isWhite = isWhite;
@@ -1352,12 +1465,21 @@ public class Chess implements AbstractStrategyGame{
     private class Square {
         private final int file;
         private final int rank;
+
+        //Parameters
+        //  - An integer for the file
+        //  - An integer for the rank
+        //Behavior:
+        //  - Creates a square object that groups the parameters together
         private Square(int file, int rank){
             this.file = file;
             this.rank = rank;
         }
 
-        //converts the square into <file><rank> format (ex. e4)
+        //Behavior:
+        //  - Converts the square into <file><rank> format (ex. e4)
+        //Returns:
+        //  - Returns the converted string
         public String toString(){
             return (char)(file + (int)'a') + "" + (8 - rank);
         }
