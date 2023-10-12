@@ -1,4 +1,3 @@
-import java.security.*;
 import java.util.*;
 import java.util.regex.*;
 
@@ -7,26 +6,18 @@ import java.util.regex.*;
 //TODO:
 //finish writing game instructions
 
-//add crazyhouse
 //add exception throwing the board constructor
-
-//move all initializations to constructors >:(
+//add draw by insufficient material
 
 //This is the class that creates and runs chess games. It implements the AbstractStrategyGame interface. 
 public class Chess implements AbstractStrategyGame{
     
     private Board board;
-    private int gameType = -1; //-1 for not chosen, 0 for standard, 1 for chess960, 2 for crazyhouse, 3 for atomic
-    private Map<String, Integer> threeFoldCheck = new HashMap<>();
+    private int gameType; //-1 for not chosen, 0 for standard, 1 for chess960, 2 for crazyhouse, 3 for atomic
+    private Map<String, Integer> threeFoldCheck;
     private String startingFEN;
-    private int winner = -1;
-    private boolean drawInitiated, drawInitiatedThisRound = false;
-
-    private Pattern coordinateRegex = Pattern.compile("^[a-h][1-8][a-h][1-8](=[NBRQ])?$", Pattern.CASE_INSENSITIVE);
-    private Pattern algebraicRegex = Pattern.compile(
-                "^([NBRQK])([a-h|1-8])?[x|@]?([a-h])([1-8])[+$#]?|([a-h]x|@)?([a-h])([1-8])(=[NBRQ]| ?e\\.p\\.)?[+$#]?|O-O(-O)?[+$#]?$");
-    private Pattern drawRegex = Pattern.compile("^draw$", Pattern.CASE_INSENSITIVE);
-    private Pattern resignRegex = Pattern.compile("^resign$", Pattern.CASE_INSENSITIVE);
+    private int winner;
+    private boolean drawInitiated, drawInitiatedThisRound;
 
     private enum PieceType {
             PAWN,
@@ -38,8 +29,17 @@ public class Chess implements AbstractStrategyGame{
     }
     
     //constants to make the code easier to read
+    private static final Pattern boardAsString = Pattern.compile("^[PNBRQKpnbrqk1-8]{1,8}\\/{7}[PNBRQKpnbrqk1-8]{1,8} [wb] K?Q?k?q? (-|[a-h][1-8]) \\d* \\d*$");
+    private static final Pattern coordinateRegex = Pattern.compile("^[a-h][1-8][a-h][1-8](=[NBRQ])?$", Pattern.CASE_INSENSITIVE);
+    private static final Pattern algebraicRegex = Pattern.compile(
+                "^([NBRQK])([a-h|1-8])?[x|@]?([a-h])([1-8])[+$#]?|([a-h]x|@)?([a-h])([1-8])(=[NBRQ]| ?e\\.p\\.)?[+$#]?|O-O(-O)?[+$#]?$");
+    private static final Pattern drawRegex = Pattern.compile("^draw$", Pattern.CASE_INSENSITIVE);
+    private static final Pattern resignRegex = Pattern.compile("^resign$", Pattern.CASE_INSENSITIVE);
+
     private static final int BOARD_SIZE = 8;
     private static final String DEFAULT_BOARD_SETUP = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    private static final int KINGSIDE = 0;
+    private static final int QUEENSIDE = 1;
     private static final int KINGSIDE_CASTLE_FILE = 6;
     private static final int KINGSIDE_CASTLE_FILE_ROOK = 5;
     private static final int QUEENSIDE_CASTLE_FILE = 2;
@@ -63,7 +63,14 @@ public class Chess implements AbstractStrategyGame{
     //Behavior
     //  - Creates a chess game and will set up the default board
     public Chess(){
-        setUpBoard(-1);
+        gameType = -1;
+        threeFoldCheck = new HashMap<>();
+        startingFEN = DEFAULT_BOARD_SETUP;
+        winner = -1;
+        drawInitiated = false;
+        drawInitiatedThisRound = false;
+
+        setUpBoard(gameType);
     }
 
     //Parameters:
@@ -71,7 +78,7 @@ public class Chess implements AbstractStrategyGame{
     //Behavior:
     //  - Sets up the board based off the variant
     private void setUpBoard(int gameType){
-        if(gameType != 1){
+        if(gameType != 1){ //1 is Chess960
             startingFEN = DEFAULT_BOARD_SETUP;
         } else {
             String randomizedPieces = chess960Randomizer();
@@ -102,11 +109,10 @@ public class Chess implements AbstractStrategyGame{
     //    in Forsyth-Edwards Notation, the moves made, and the result if the game is over
     public String toString(){
         if(isGameOver()){
-            return board.toString() + "\n" + "VARIANT: " + VARIANTS[gameType] + "\n" + getMoves();
+            return board.toString(gameType == 2) + "\n" + "VARIANT: " + VARIANTS[gameType] + "\n" + getMoves();
         }
-        if(gameType >= 0){
-        
-            return board.toString() + 
+        if(gameType != -1){
+            return board.toString(gameType == 2) + 
                 (drawInitiated ? "\nPlayer " + getNextPlayer() + " has offered a draw. \nType \"draw\" to accept, play a move to decline." : "");
         
         } else{ 
@@ -156,16 +162,16 @@ public class Chess implements AbstractStrategyGame{
     public void makeMove(Scanner input){
         drawInitiatedThisRound = false;
         String move = input.nextLine();
-        if(gameType < 0){
+        if(gameType == -1){
             int type = Integer.parseInt(move);
-            if(type > 3 || type < 0){
-                throw new IllegalArgumentException("There are only 4 game types, numbered from 0-3.");
+            if(type >= VARIANTS.length || type < 0){
+                throw new IllegalArgumentException("There are only " + VARIANTS.length + " game types, numbered from 0-3.");
             }
             gameType = type;
             setUpBoard(gameType);
         } else if (resignRegex.matcher(move).matches()){
             winner = board.whiteTurn ? PLAYER_BLACK : PLAYER_WHITE;
-            board.portableGameNotation += board.whiteTurn ? "0-1" : "1-0";
+            board.portableGameNotation += board.whiteTurn ? " 0-1" : " 1-0";
             
         } else if(drawRegex.matcher(move).matches() && drawInitiated){
             winner = DRAW;
@@ -189,6 +195,7 @@ public class Chess implements AbstractStrategyGame{
             int endRank = -1;
 
             Piece promotionPiece = null;
+            Piece placedPiece = null;
 
             if(cdnMatcher.matches()){
                 startFile = (int)move.charAt(0) - (int)'a';
@@ -205,13 +212,13 @@ public class Chess implements AbstractStrategyGame{
                     }
                     String promotionChar = cdnMatcher.group(1).charAt(1) + "";
                     if(promotionChar.equals("N")){
-                        promotionPiece = new Piece(PieceType.KNIGHT, board.whiteTurn, new Square(endFile, endRank));
+                        promotionPiece = new Piece(PieceType.KNIGHT, board.whiteTurn, new Square(endFile, endRank), true);
                     } else if(promotionChar.equals("B")){
-                        promotionPiece = new Piece(PieceType.BISHOP, board.whiteTurn, new Square(endFile, endRank));
+                        promotionPiece = new Piece(PieceType.BISHOP, board.whiteTurn, new Square(endFile, endRank), true);
                     } else if(promotionChar.equals("R")){
-                        promotionPiece = new Piece(PieceType.ROOK, board.whiteTurn, new Square(endFile, endRank));
+                        promotionPiece = new Piece(PieceType.ROOK, board.whiteTurn, new Square(endFile, endRank), true);
                     } else {
-                        promotionPiece = new Piece(PieceType.QUEEN, board.whiteTurn, new Square(endFile, endRank));
+                        promotionPiece = new Piece(PieceType.QUEEN, board.whiteTurn, new Square(endFile, endRank), true);
                     }
                 } else {
                     if(board.board[startFile][startRank].pieceType == PieceType.PAWN && endRank == (board.whiteTurn ? 0 : 7)){
@@ -243,13 +250,13 @@ public class Chess implements AbstractStrategyGame{
                 if(move.contains("O-O")){
                     //System.out.println("castling move inputted");
                     if(algMatcher.group(9) != null){
-                        if(board.whiteTurn ? board.whiteCastlingRights[1] : board.blackCastlingRights[1]){
+                        if(board.whiteTurn ? board.whiteCastlingRights[QUEENSIDE] : board.blackCastlingRights[QUEENSIDE]){
                             doesMoveExist = true;
                         }
                         endFile = QUEENSIDE_CASTLE_FILE;
                         isKingSideCastle = false;
                     } else {
-                        if(board.whiteTurn ? board.whiteCastlingRights[0] : board.blackCastlingRights[0]){
+                        if(board.whiteTurn ? board.whiteCastlingRights[KINGSIDE] : board.blackCastlingRights[KINGSIDE]){
                             doesMoveExist = true;
                         }
                         endFile = KINGSIDE_CASTLE_FILE;
@@ -273,7 +280,6 @@ public class Chess implements AbstractStrategyGame{
                             startRank = 8 - Character.getNumericValue(algMatcher.group(2).charAt(0));
                         }
                     }
-
                     for(Piece piece : board.whiteTurn ? board.whitePieces : board.blackPieces){
                         if(TYPE_TO_STRING.get(piece.pieceType).equals(algMatcher.group(1))){
                             //System.out.println("Piece specified is " + TYPE_TO_STRING.get(piece.pieceType));
@@ -339,27 +345,44 @@ public class Chess implements AbstractStrategyGame{
                             }
                         }
                     }
-                    if(!doesMoveExist){ //need to throw exception before promotion check or startrank will be null and ambiguous promotion checker will crash
+                    if(!doesMoveExist && !move.contains("@")){ //need to throw exception before promotion check or startrank will be null and ambiguous promotion checker will crash
                         throw new IllegalArgumentException("Move does not exist.");
                     }
                     //promotion checker (moves in the format of a1=Q or bxc8=B)
-                    if(algMatcher.group(8) != null && !algMatcher.group(8).equals(" e.p.") && !algMatcher.group(8).equals("e.p.")){
-                        if(endRank != (board.whiteTurn ? 0 : 7)){
+                    if(!move.contains("@") && algMatcher.group(8) != null && !algMatcher.group(8).equals(" e.p.") 
+                        && !algMatcher.group(8).equals("e.p.")){
+                        
+                            if(endRank != (board.whiteTurn ? 0 : 7)){
                             throw new IllegalArgumentException("Pawns can only promote when they reach the end of the board.");
                         }
                         String promotionChar = algMatcher.group(8).charAt(1) + "";
                         if(promotionChar.equals("N")){
-                            promotionPiece = new Piece(PieceType.KNIGHT, board.whiteTurn, new Square(endFile, endRank));
+                            promotionPiece = new Piece(PieceType.KNIGHT, board.whiteTurn, new Square(endFile, endRank), true);
                         } else if(promotionChar.equals("B")){
-                            promotionPiece = new Piece(PieceType.BISHOP, board.whiteTurn, new Square(endFile, endRank));
+                            promotionPiece = new Piece(PieceType.BISHOP, board.whiteTurn, new Square(endFile, endRank), true);
                         } else if(promotionChar.equals("R")){
-                            promotionPiece = new Piece(PieceType.ROOK, board.whiteTurn, new Square(endFile, endRank));
+                            promotionPiece = new Piece(PieceType.ROOK, board.whiteTurn, new Square(endFile, endRank), true);
                         } else {
-                            promotionPiece = new Piece(PieceType.QUEEN, board.whiteTurn, new Square(endFile, endRank));
+                            promotionPiece = new Piece(PieceType.QUEEN, board.whiteTurn, new Square(endFile, endRank), true);
                         }
                     } else {
-                        if(board.board[startFile][startRank].pieceType == PieceType.PAWN && endRank == (board.whiteTurn ? 0 : 7)){
+                        if(!move.contains("@") && board.board[startFile][startRank].pieceType == PieceType.PAWN && endRank == (board.whiteTurn ? 0 : 7)){
                             throw new IllegalArgumentException("Ambiguous move input. Please specify the promotion.");
+                        }
+                    }
+                }
+                if(move.contains("@")){
+                    for(Piece piece : board.whiteTurn ? board.whiteCapturedPieces : board.blackCapturedPieces){
+                        if(algMatcher.group(1) != null){
+                            if(TYPE_TO_STRING.get(piece.pieceType).equals(algMatcher.group(1))){
+                                doesMoveExist = true;
+                                placedPiece = piece;
+                            }
+                        } else {
+                            if(piece.pieceType == PieceType.PAWN){
+                                doesMoveExist = true;
+                                placedPiece = piece;
+                            }
                         }
                     }
                 }
@@ -372,9 +395,13 @@ public class Chess implements AbstractStrategyGame{
                 throw new IllegalArgumentException("Input is in the wrong format.");
             }
 
-            
+            Piece piece = null;
+            if(move.contains("@")){
+                piece = placedPiece;
+            } else {
+                piece = board.board[startFile][startRank];
+            }
 
-            Piece piece = board.board[startFile][startRank];
             for(Square legal : getLegalMoves().get(piece)){
                 if(legal.file == endFile && legal.rank == endRank){
                     legalMove = true;
@@ -384,6 +411,18 @@ public class Chess implements AbstractStrategyGame{
 
             if(!legalMove){
                 throw new IllegalArgumentException("Piece cannot move there.");
+            }
+
+            if(placedPiece != null) {
+                if(piece.isWhite){
+                    board.whitePieces.add(piece);
+                    board.whiteControlledSquares.put(piece, new HashSet<>());
+                    board.whiteCapturedPieces.remove(piece);
+                } else {
+                    board.blackPieces.add(piece);
+                    board.blackControlledSquares.put(piece, new HashSet<>());
+                    board.blackCapturedPieces.remove(piece);
+                }
             }
 
             if(board.whiteTurn){
@@ -411,22 +450,31 @@ public class Chess implements AbstractStrategyGame{
                 }
                 isCapture = board.move(piece, new Square(endFile, endRank));
                 
+                if(move.contains("@")){
+                    board.portableGameNotation += "@";
+                }
                 board.portableGameNotation += new Square(endFile, endRank).toString();
             }
 
-            if(gameType == 3 && isCapture){
-                int kingsExplodeIndex = board.atomicCaptureExplosion(new Square(endFile, endRank));
-                if(kingsExplodeIndex == 1){
-                    winner = PLAYER_BLACK;
-                    board.portableGameNotation += " 0-1";
+            if(isCapture){
+                if(gameType == 2){
+                    //board.whiteCapturedPieces = board.orderPieces(board.whiteCapturedPieces);
+                    //board.blackCapturedPieces = board.orderPieces(board.blackCapturedPieces);
+                }
+                if(gameType == 3){
+                    int kingsExplodeIndex = board.atomicCaptureExplosion(new Square(endFile, endRank));
+                    if(kingsExplodeIndex == 1){
+                        winner = PLAYER_BLACK;
+                        board.portableGameNotation += " 0-1";
 
-                } else if (kingsExplodeIndex == 2){
-                    winner = PLAYER_WHITE;
-                    board.portableGameNotation += " 1-0";
+                    } else if (kingsExplodeIndex == 2){
+                        winner = PLAYER_WHITE;
+                        board.portableGameNotation += " 1-0";
 
-                } else if(kingsExplodeIndex == 3){
-                    winner = DRAW;
-                    board.portableGameNotation += " 1/2-1/2";
+                    } else if(kingsExplodeIndex == 3){
+                        winner = DRAW;
+                        board.portableGameNotation += " 1/2-1/2";
+                    }
                 }
             }
 
@@ -437,25 +485,25 @@ public class Chess implements AbstractStrategyGame{
             //removing castling rights if king or rook moved
             if(piece.pieceType == PieceType.KING){
                 if(board.whiteTurn){
-                    board.whiteCastlingRights[0] = false;
-                    board.whiteCastlingRights[1] = false;
+                    board.whiteCastlingRights[KINGSIDE] = false;
+                    board.whiteCastlingRights[QUEENSIDE] = false;
                 } else {
-                    board.blackCastlingRights[0] = false;
-                    board.blackCastlingRights[1] = false;
+                    board.blackCastlingRights[KINGSIDE] = false;
+                    board.blackCastlingRights[QUEENSIDE] = false;
                 }
             }
             if(piece.pieceType == PieceType.ROOK){
                 if(board.whiteTurn){
                     if(piece.square.file > board.whiteKingSquare.file){
-                        board.whiteCastlingRights[1] = false;
+                        board.whiteCastlingRights[KINGSIDE] = false;
                     } else {
-                        board.whiteCastlingRights[0] = false;
+                        board.whiteCastlingRights[QUEENSIDE] = false;
                     }
                 } else {
                     if(piece.square.file > board.blackKingSquare.file){
-                        board.blackCastlingRights[1] = false;
+                        board.blackCastlingRights[KINGSIDE] = false;
                     } else {
-                        board.blackCastlingRights[0] = false;
+                        board.blackCastlingRights[QUEENSIDE] = false;
                     }
                 }
             }
@@ -500,7 +548,7 @@ public class Chess implements AbstractStrategyGame{
                 if(board.playerInCheck[board.whiteTurn ? 0 : 1]){ 
                     winner = board.whiteTurn ? PLAYER_BLACK : PLAYER_WHITE; //whiteTurn boolean was inverted above so this ternary operator must be flipped
                     board.portableGameNotation += "#";
-                    board.portableGameNotation += board.whiteTurn ? "0-1" : "1-0";
+                    board.portableGameNotation += board.whiteTurn ? " 0-1" : " 1-0";
                 } else {
                     winner = DRAW;
                     board.portableGameNotation += "$";
@@ -526,15 +574,16 @@ public class Chess implements AbstractStrategyGame{
     }
 
     
-
+    //Behavior
+    //  - takes all piece attacks and determines which ones of those are legal moves
     //Returns: 
-    // - All the legal moves that a player can play for their turn
+    //  - All the legal moves that a player can play for their turn
     private Map<Piece, Set<Square>> getLegalMoves(){
         Map<Piece, Set<Square>> legalMoves = new HashMap<>();
-        String currentFEN = board.boardToFENFull();
         //System.out.println(currentFEN);
         for(Piece piece : board.whiteTurn ? board.whitePieces : board.blackPieces){
-            //System.out.println("checking piece " + TYPE_TO_STRING.get(piece.pieceType) + " on " + (char)(piece.square.file + (int)'a') + "" + (8 - piece.square.rank) + " for white");
+            //System.out.println("checking piece " + TYPE_TO_STRING.get(piece.pieceType) 
+            //    + " on " + (char)(piece.square.file + (int)'a') + "" + (8 - piece.square.rank) + " for white");
             legalMoves.put(piece, new HashSet<Square>());
             for(Square move : board.whiteTurn ? board.whiteControlledSquares.get(piece) : board.blackControlledSquares.get(piece)){
                 legalMoves.get(piece).add(move);
@@ -542,7 +591,7 @@ public class Chess implements AbstractStrategyGame{
                     legalMoves.get(piece).remove(move);
                 }
             }
-            if(piece.pieceType == PieceType.PAWN){
+            if(piece.pieceType == PieceType.PAWN && piece.square.file >= 0){
                 //removing empty pawn captures from legal move list
                 Set<Square> emptyCaptures = new HashSet<>();
                 for(Square move : legalMoves.get(piece)){
@@ -565,7 +614,7 @@ public class Chess implements AbstractStrategyGame{
                 }
             }
             if(piece.pieceType == PieceType.KING){
-                if(board.whiteTurn ? board.whiteCastlingRights[0] : board.blackCastlingRights[0]){
+                if(board.whiteTurn ? board.whiteCastlingRights[KINGSIDE] : board.blackCastlingRights[KINGSIDE]){
                     int firstRank = board.whiteTurn ? 7 : 0;
                     boolean illegalCastle = false;
                     for(int currentFile = piece.square.file; currentFile <= KINGSIDE_CASTLE_FILE; currentFile++){
@@ -596,7 +645,7 @@ public class Chess implements AbstractStrategyGame{
                         //System.out.println("added kingside castle to legal moves");
                     }
                 }
-                if(board.whiteTurn ? board.whiteCastlingRights[1] : board.blackCastlingRights[1]){
+                if(board.whiteTurn ? board.whiteCastlingRights[QUEENSIDE] : board.blackCastlingRights[QUEENSIDE]){
                     int firstRank = board.whiteTurn ? 7 : 0;
                     boolean illegalCastle = false;
                     for(int currentFile = piece.square.file; currentFile >= QUEENSIDE_CASTLE_FILE; currentFile--){
@@ -629,26 +678,73 @@ public class Chess implements AbstractStrategyGame{
                 }
             }
         }
-        for(Piece piece : board.whiteTurn ? board.whitePieces : board.blackPieces){
-            Set<Square> illegalMoves = new HashSet<>();
-            for(Square square : legalMoves.get(piece)){
-                Board testBoard = new Board(currentFEN);
-                //System.out.println(currentFEN);
-                //System.out.println(testBoard.boardToFENFull());
-                //System.out.println("testing move " + TYPE_TO_STRING.get(piece.pieceType) + " on " + (char)(piece.square.file + (int)'a') + "" + (8 - piece.square.rank) + " to " + (char)(square.file + (int)'a') + "" + (8 - square.rank) + " for white");
-                testBoard.move(testBoard.board[piece.square.file][piece.square.rank], square);
-                if(testBoard.playerInCheck[0]){
-                    illegalMoves.add(square);
+        removeIllegalMoves(board.whiteTurn ? board.whitePieces : board.blackPieces, legalMoves);
+
+        if(gameType == 2){
+            for(Piece piece : board.whiteTurn ? board.whiteCapturedPieces : board.blackCapturedPieces){
+                legalMoves.put(piece, new HashSet<>());
+                for(int rank = 1; rank < BOARD_SIZE - 1; rank ++){
+                    for(int file = 0; file < BOARD_SIZE; file ++){
+                        if(board.board[file][rank] == null){
+                            legalMoves.get(piece).add(new Square(file, rank));
+                        }
+                    }
+                }
+                //cant place pawns on the 1st and 8th ranks
+                if(piece.pieceType != PieceType.PAWN){
+                    for(int file = 0; file < BOARD_SIZE; file ++){
+                        if(board.board[file][0] == null){
+                            legalMoves.get(piece).add(new Square(file, 0));
+                        }
+                    }
+                    for(int file = 0; file < BOARD_SIZE; file ++){
+                        if(board.board[file][7] == null){
+                            legalMoves.get(piece).add(new Square(file, 7));
+                        }
+                    }
                 }
             }
-            for(Square square : illegalMoves){
-                legalMoves.get(piece).remove(square);
-            }
+            removeIllegalMoves(board.whiteTurn ? board.whiteCapturedPieces : board.blackCapturedPieces, legalMoves);
         }
         return legalMoves;
     }
 
-    //Returns
+    //Parameters:
+    //  - Piece list that contains the pieces that must be checked
+    //  - Move set for each piece
+    //Behavior:
+    //  - removes the moves that leave the player's own king or put the player's own king in check from the inputted move sets
+    private void removeIllegalMoves(List<Piece> pieceList, Map<Piece, Set<Square>> moves){
+        String currentFEN = board.boardToFENFull();
+        for(Piece piece : pieceList){
+            Set<Square> illegalMoves = new HashSet<>();
+            for(Square square : moves.get(piece)){
+                Board testBoard = new Board(currentFEN);
+                // System.out.println("testing move " + TYPE_TO_STRING.get(piece.pieceType) 
+                //     + " on " + (char)(piece.square.file + (int)'a') + "" + (8 - piece.square.rank) + " to " 
+                //     + (char)(square.file + (int)'a') + "" + (8 - square.rank) + " for white");
+                
+                //special logic for placing pieces in crazyhouse
+                if(piece.square.file < 0){
+                    Piece testPiece = new Piece(piece.pieceType, piece.isWhite, piece.square, piece.isPromoted);
+                    testBoard.move(testPiece, square);
+                
+                //regular move logic
+                } else {
+                    testBoard.move(testBoard.board[piece.square.file][piece.square.rank], square);
+                }
+                testBoard.calculateAttacks();
+                if(testBoard.playerInCheck[board.whiteTurn ? 0 : 1]){
+                    illegalMoves.add(square);
+                }
+            }
+            for(Square square : illegalMoves){
+                moves.get(piece).remove(square);
+            }
+        }
+    }
+
+    //Returns:
     //  - A string with the order of the 8 back rank pieces randomized with a few restaints
     //        - The king must be between the 2 rooks
     //        - The bishops must be on opposite colors
@@ -707,31 +803,23 @@ public class Chess implements AbstractStrategyGame{
 
     //This helper class contains all the information related to a board state
     private class Board {
-        private Piece[][] board = new Piece[BOARD_SIZE][BOARD_SIZE];
+        private Piece[][] board;
 
-        private List<Piece> whitePieces = new ArrayList<>();
-        private List<Piece> blackPieces = new ArrayList<>();
+        private List<Piece> whitePieces, blackPieces;
+        private List<Piece> whiteCapturedPieces, blackCapturedPieces;
+        private Map<Piece, Set<Square>> whiteControlledSquares, blackControlledSquares;
+        private boolean[] whiteCastlingRights, blackCastlingRights;
 
-        private List<PieceType> whiteCapturedPieces = new ArrayList<>();
-        private List<PieceType> blackCapturedPieces = new ArrayList<>();
-
-        private Map<Piece, Set<Square>> whiteControlledSquares = new HashMap<>();
-        private Map<Piece, Set<Square>> blackControlledSquares = new HashMap<>();
-        private boolean[] whiteCastlingRights = new boolean[2];
-        private boolean[] blackCastlingRights = new boolean[2];
-
-        private boolean[] playerInCheck = new boolean[]{false, false};
-
+        private boolean[] playerInCheck;
         private boolean whiteTurn;
         private Square enPassantSquare;
         private int fiftyMoveRuleCounter;
         private int moveNumber;
         
-        private String portableGameNotation = "";
+        private String portableGameNotation;
 
         private Square whiteKingSquare, blackKingSquare;
-        private Piece[] kingsideCastleRooks = new Piece[2];
-        private Piece[] queensideCastleRooks = new Piece[2];
+        private Piece[] kingsideCastleRooks,queensideCastleRooks;
 
 
         //Parameters:
@@ -741,6 +829,23 @@ public class Chess implements AbstractStrategyGame{
         //Exceptions:
         //  - Throws an exception if the string is not in Forsyth-Edwards Notation
         private Board(String fen){
+            Matcher inputStringChecker = boardAsString.matcher(fen);
+            if(!inputStringChecker.matches()){
+                throw new IllegalArgumentException("Invalid board setup");
+            }
+            board = new Piece[BOARD_SIZE][BOARD_SIZE];
+            whitePieces = new ArrayList<>();
+            blackPieces = new ArrayList<>();
+            whiteCapturedPieces = new ArrayList<>();
+            blackCapturedPieces = new ArrayList<>();
+            whiteControlledSquares = new HashMap<>();
+            blackControlledSquares = new HashMap<>();
+            whiteCastlingRights = new boolean[2];
+            blackCastlingRights = new boolean[2];
+            playerInCheck = new boolean[]{false, false};
+            portableGameNotation = "";
+            kingsideCastleRooks = new Piece[2];
+            queensideCastleRooks = new Piece[2];
 
             String[] temp = fen.split(" ");
             
@@ -748,23 +853,22 @@ public class Chess implements AbstractStrategyGame{
             for(int rank = 0; rank < ranks.length; rank++){
                 int file = -1;
                 for(int stringIndex = 0; stringIndex < ranks[rank].length(); stringIndex++){
-                    //when switch statements are not allowed
                     file ++;
                     char currentChar = ranks[rank].charAt(stringIndex);
                     if(currentChar == 'p'){
-                        board[file][rank] = new Piece(PieceType.PAWN, false, new Square(file, rank));
+                        board[file][rank] = new Piece(PieceType.PAWN, false, new Square(file, rank), false);
                         blackControlledSquares.put(board[file][rank], getPossiblePawnCaptures(new Square(file, rank), false));
 
                     } else if(currentChar == 'n'){
-                        board[file][rank] = new Piece(PieceType.KNIGHT, false, new Square(file, rank));
+                        board[file][rank] = new Piece(PieceType.KNIGHT, false, new Square(file, rank), false);
                         blackControlledSquares.put(board[file][rank], getPossibleKnightMoves(new Square(file, rank)));
 
                     } else if(currentChar == 'b'){
-                        board[file][rank] = new Piece(PieceType.BISHOP, false, new Square(file, rank));
+                        board[file][rank] = new Piece(PieceType.BISHOP, false, new Square(file, rank), false);
                         blackControlledSquares.put(board[file][rank], getPossibleBishopMoves(new Square(file, rank)));
 
                     } else if(currentChar == 'r'){
-                        board[file][rank] = new Piece(PieceType.ROOK, false, new Square(file, rank));
+                        board[file][rank] = new Piece(PieceType.ROOK, false, new Square(file, rank), false);
                         blackControlledSquares.put(board[file][rank], getPossibleRookMoves(new Square(file, rank)));
                         if(rank == 0){
                             if(queensideCastleRooks[1] == null){
@@ -775,28 +879,28 @@ public class Chess implements AbstractStrategyGame{
                         }
 
                     } else if(currentChar == 'q'){
-                        board[file][rank] = new Piece(PieceType.QUEEN, false, new Square(file, rank));
+                        board[file][rank] = new Piece(PieceType.QUEEN, false, new Square(file, rank), false);
                         blackControlledSquares.put(board[file][rank], getPossibleQueenMoves(new Square(file, rank)));
 
                     } else if(currentChar == 'k'){
-                        board[file][rank] = new Piece(PieceType.KING, false, new Square(file, rank));
+                        board[file][rank] = new Piece(PieceType.KING, false, new Square(file, rank), false);
                         blackControlledSquares.put(board[file][rank], getPossibleKingMoves(new Square(file, rank)));
                         blackKingSquare = new Square(file, rank);
 
                     } else if(currentChar == 'P'){
-                        board[file][rank] = new Piece(PieceType.PAWN, true, new Square(file, rank));
+                        board[file][rank] = new Piece(PieceType.PAWN, true, new Square(file, rank), false);
                         whiteControlledSquares.put(board[file][rank], getPossiblePawnCaptures(new Square(file, rank), true));
 
                     } else if(currentChar == 'N'){
-                        board[file][rank] = new Piece(PieceType.KNIGHT, true, new Square(file, rank));
+                        board[file][rank] = new Piece(PieceType.KNIGHT, true, new Square(file, rank), false);
                         whiteControlledSquares.put(board[file][rank], getPossibleKnightMoves(new Square(file, rank)));
 
                     } else if(currentChar == 'B'){
-                        board[file][rank] = new Piece(PieceType.BISHOP, true, new Square(file, rank));
+                        board[file][rank] = new Piece(PieceType.BISHOP, true, new Square(file, rank), false);
                         whiteControlledSquares.put(board[file][rank], getPossibleBishopMoves(new Square(file, rank)));
 
                     } else if(currentChar == 'R'){
-                        board[file][rank] = new Piece(PieceType.ROOK, true, new Square(file, rank));
+                        board[file][rank] = new Piece(PieceType.ROOK, true, new Square(file, rank), false);
                         whiteControlledSquares.put(board[file][rank], getPossibleRookMoves(new Square(file, rank)));
                         if(rank == 7){
                             if(queensideCastleRooks[0] == null){
@@ -807,11 +911,11 @@ public class Chess implements AbstractStrategyGame{
                         }
 
                     } else if(currentChar == 'Q'){
-                        board[file][rank] = new Piece(PieceType.QUEEN, true, new Square(file, rank));
+                        board[file][rank] = new Piece(PieceType.QUEEN, true, new Square(file, rank), false);
                         whiteControlledSquares.put(board[file][rank], getPossibleQueenMoves(new Square(file, rank)));
 
                     } else if(currentChar == 'K'){
-                        board[file][rank] = new Piece(PieceType.KING, true, new Square(file, rank));
+                        board[file][rank] = new Piece(PieceType.KING, true, new Square(file, rank), false);
                         whiteControlledSquares.put(board[file][rank], getPossibleKingMoves(new Square(file, rank)));
                         whiteKingSquare = new Square(file, rank);
 
@@ -835,16 +939,16 @@ public class Chess implements AbstractStrategyGame{
             }
 
             if(temp[2].contains("K")){
-                whiteCastlingRights[1] = true;
+                whiteCastlingRights[KINGSIDE] = true;
             }
             if(temp[2].contains("Q")){
-                whiteCastlingRights[0] = true;
+                whiteCastlingRights[QUEENSIDE] = true;
             }
             if(temp[2].contains("k")){
-                blackCastlingRights[1] = true;
+                blackCastlingRights[KINGSIDE] = true;
             }
             if(temp[2].contains("q")){
-                blackCastlingRights[0] = true;
+                blackCastlingRights[QUEENSIDE] = true;
             }
 
             if(temp[3].equals("-")){
@@ -998,7 +1102,7 @@ public class Chess implements AbstractStrategyGame{
         //  - Returns the set of moves calculated in its behavior
         private Set<Square> getDirectionalAttacks(Square square, int fileDirection, int rankDirection){
             if(fileDirection > 1 || fileDirection < -1 || rankDirection > 1 || rankDirection < -1){
-                throw new InvalidParameterException("Directions must be between -1 and 1 inclusive.");
+                throw new IllegalArgumentException("Directions must be between -1 and 1 inclusive.");
             }
             Set<Square> attacks = new HashSet<>();
             int tempFile = square.file + fileDirection;
@@ -1073,16 +1177,16 @@ public class Chess implements AbstractStrategyGame{
             String fullFEN = boardToFENShort();
             fullFEN += " " + (whiteTurn ? "w" : "b");
             fullFEN += " ";
-            if(whiteCastlingRights[1]){
+            if(whiteCastlingRights[KINGSIDE]){
                 fullFEN += "K";
             }
-            if(whiteCastlingRights[0]){
+            if(whiteCastlingRights[QUEENSIDE]){
                 fullFEN += "Q";
             }
-            if(blackCastlingRights[1]){
+            if(blackCastlingRights[KINGSIDE]){
                 fullFEN += "k";
             }
-            if(blackCastlingRights[0]){
+            if(blackCastlingRights[QUEENSIDE]){
                 fullFEN += "q";
             }
             fullFEN += " ";
@@ -1098,12 +1202,16 @@ public class Chess implements AbstractStrategyGame{
             return fullFEN;
         }
 
+        //Parameters:
+        //  - boolean for if the game is of the Crazyhouse variant
         //Behavior:
         //  - Converts the board into a string that is formatted in a manner that is similar to a chess board
         //  - Flips the board based on which player it is so both players will play from their point of view
+        //  - If the variant is Crazyhouse, captured pieces will be displayed on the side and promoted 
+        //    pieces will be tinted a lighter color
         //Returns:
         //  - Returns the converted string
-        public String toString(){
+        private String toString(boolean isCrazyhouse){
             String boardString = "";
             if(whiteTurn){
                 for(int rank = 0; rank < BOARD_SIZE; rank++){
@@ -1111,31 +1219,39 @@ public class Chess implements AbstractStrategyGame{
                         String background = ((file + rank) % 2) == 0 ? "\u001b[47m" : "\u001b[40m";
                         boardString += background;
                         String color = "";
+                        boardString += " ";
                         if(board[file][rank] != null){
                             color = board[file][rank].isWhite ? "\u001b[38;2;253;182;0m" : "\u001b[38;5;21m";
+                            
+                            //tints promoted pieces in crazyhouse as they turn back into pawns when captured
+                            if(isCrazyhouse & board[file][rank].isPromoted){
+                                color = board[file][rank].isWhite ? "\u001b[38;2;255;195;180m" : "\u001b[38;5;39m";
+                            }    
                             boardString += color;
-                            if(board[file][rank].pieceType == PieceType.PAWN){
-                                boardString += " P ";
-                            } else if(board[file][rank].pieceType == PieceType.KNIGHT){
-                                boardString += " N ";
-                            } else if(board[file][rank].pieceType == PieceType.BISHOP){
-                                boardString += " B ";
-                            } else if(board[file][rank].pieceType == PieceType.ROOK){
-                                boardString += " R ";
-                            } else if(board[file][rank].pieceType == PieceType.QUEEN){
-                                boardString += " Q ";
-                            } else if(board[file][rank].pieceType == PieceType.KING){
-                                boardString += " K ";
-                            } else {
-                                boardString += "   ";
-                            }
+                            boardString += TYPE_TO_STRING.get(board[file][rank].pieceType);
                         } else {
-                            boardString += "   ";
+                            boardString += " ";
                         }
-                        
+                        boardString += " ";
                         boardString += "\u001b[0m";
                     }
-                    boardString += " " + (BOARD_SIZE - rank) + "\n";
+                    boardString += " " + (BOARD_SIZE - rank) + " ";
+                    //adds pieces in players inventories
+                    if(isCrazyhouse){
+                        if(rank < 4){
+                            boardString += "\u001b[38;5;21m";
+                            for(int i = rank * 10; i < Math.min(rank * 11 + 11, blackCapturedPieces.size()); i++){
+                                boardString += TYPE_TO_STRING.get(blackCapturedPieces.get(i).pieceType);
+                            }
+                        } else {
+                            boardString += "\u001b[38;2;253;182;0m";
+                            for(int i = 77 - (rank * 11); i < Math.min(88 - (rank * 11), whiteCapturedPieces.size()); i++){
+                                boardString += TYPE_TO_STRING.get(whiteCapturedPieces.get(i).pieceType);
+                            }
+                        }
+                        boardString += "\u001b[0m";
+                    }
+                    boardString += "\n";
                 }
                 boardString += " a  b  c  d  e  f  g  h ";
             }else {
@@ -1143,32 +1259,40 @@ public class Chess implements AbstractStrategyGame{
                     for(int file = BOARD_SIZE - 1; file >= 0; file--){
                         String background = ((file + rank) % 2) == 0 ? "\u001b[47m" : "\u001b[40m";
                         boardString += background;
+                        boardString += " ";
                         String color = "";
                         if(board[file][rank] != null){
                             color = board[file][rank].isWhite ? "\u001b[38;2;253;182;0m" : "\u001b[38;5;21m";
+                            
+                            //tints promoted pieces in crazyhouse as they turn back into pawns when captured
+                            if(isCrazyhouse & board[file][rank].isPromoted){
+                                color = board[file][rank].isWhite ? "\u001b[38;2;255;195;180m" : "\u001b[38;5;39m";
+                            }    
                             boardString += color;
-                            if(board[file][rank].pieceType == PieceType.PAWN){
-                                boardString += " P ";
-                            } else if(board[file][rank].pieceType == PieceType.KNIGHT){
-                                boardString += " N ";
-                            } else if(board[file][rank].pieceType == PieceType.BISHOP){
-                                boardString += " B ";
-                            } else if(board[file][rank].pieceType == PieceType.ROOK){
-                                boardString += " R ";
-                            } else if(board[file][rank].pieceType == PieceType.QUEEN){
-                                boardString += " Q ";
-                            } else if(board[file][rank].pieceType == PieceType.KING){
-                                boardString += " K ";
-                            } else {
-                                boardString += "   ";
-                            }
+                            boardString += TYPE_TO_STRING.get(board[file][rank].pieceType);
                         } else {
-                            boardString += "   ";
+                            boardString += " ";
                         }
-
+                        boardString += " ";
                         boardString += "\u001b[0m";
                     }
-                    boardString += " " + (BOARD_SIZE - rank) + "\n";
+                    boardString += " " + (BOARD_SIZE - rank) + " ";
+                    //adds pieces in players inventories
+                    if(isCrazyhouse){
+                        if(rank < 4){
+                            boardString += "\u001b[38;5;21m";
+                            for(int i = rank * 10; i < Math.min(rank * 11 + 11, blackCapturedPieces.size()); i++){
+                                boardString += TYPE_TO_STRING.get(blackCapturedPieces.get(i).pieceType);
+                            }
+                        } else {
+                            boardString += "\u001b[38;2;253;182;0m";
+                            for(int i = 77 - (rank * 11); i < Math.min(88 - (rank * 11), whiteCapturedPieces.size()); i++){
+                                boardString += TYPE_TO_STRING.get(whiteCapturedPieces.get(i).pieceType);
+                            }
+                        }
+                        boardString += "\u001b[0m";
+                    }
+                    boardString += "\n";
                 }
                 boardString += " h  g  f  e  d  c  b  a ";
             }
@@ -1254,23 +1378,54 @@ public class Chess implements AbstractStrategyGame{
             int startRank = piece.square.rank;
             int endFile = destination.file;
             int endRank = destination.rank;
-            boolean isCapture = false;
+            Piece capturedPiece = null;
             //regular capture
             if(board[endFile][endRank] != null && !(startFile == endFile && startRank == endRank)){
-                Piece capturedPiece = board[endFile][endRank];
+                capturedPiece = board[endFile][endRank];
                 if(whiteTurn){
                     blackPieces.remove(capturedPiece);
                     blackControlledSquares.remove(capturedPiece);
+                    if(capturedPiece.pieceType == PieceType.ROOK){
+                        if(queensideCastleRooks[1] != null && queensideCastleRooks[1].equals(capturedPiece)){
+                            queensideCastleRooks[1] = null;
+                            blackCastlingRights[QUEENSIDE] = false;
+                        }
+                        if(kingsideCastleRooks[1] != null && kingsideCastleRooks[1].equals(capturedPiece)){
+                            kingsideCastleRooks[1] = null;
+                            blackCastlingRights[KINGSIDE] = false;
+                        }
+                    }
+                    if(capturedPiece.isPromoted){
+                        whiteCapturedPieces.add(new Piece(PieceType.PAWN, true, new Square(-1, -1), false));
+                    } else {
+                        whiteCapturedPieces.add(new Piece(capturedPiece.pieceType, true, new Square(-1, -1), false));
+                    }
+                    whiteCapturedPieces = orderPieces(whiteCapturedPieces);
                 } else {
                     whitePieces.remove(capturedPiece);
                     whiteControlledSquares.remove(capturedPiece);
+                    if(capturedPiece.pieceType == PieceType.ROOK){
+                        if(queensideCastleRooks[0] != null && queensideCastleRooks[0].equals(capturedPiece)){
+                            queensideCastleRooks[0] = null;
+                            whiteCastlingRights[QUEENSIDE] = false;
+                        }
+                        if(kingsideCastleRooks[0] != null && kingsideCastleRooks[0].equals(capturedPiece)){
+                            kingsideCastleRooks[0] = null;
+                            whiteCastlingRights[KINGSIDE] = false;
+                        }
+                    }
+                    if(capturedPiece.isPromoted){
+                        blackCapturedPieces.add(new Piece(PieceType.PAWN, false, new Square(-1, -1), false));
+                    } else {
+                        blackCapturedPieces.add(new Piece(capturedPiece.pieceType, false, new Square(-1, -1), false));
+                    }
+                    blackCapturedPieces = orderPieces(blackCapturedPieces);
                 }
                 fiftyMoveRuleCounter = -1;
                 if(piece.pieceType == PieceType.PAWN){
                     portableGameNotation += (char)(startFile + (int)'a');
                 }
                 portableGameNotation += "x";
-                isCapture = true;
             }
 
             enPassantSquare = null;
@@ -1284,26 +1439,26 @@ public class Chess implements AbstractStrategyGame{
                 }
 
                 //en passant capture
-                if(endFile != startFile && board[endFile][endRank] == null){
-                    Piece capturedPiece = board[endFile][endRank + (whiteTurn ? 1: -1)];
+                if(startFile >= 0 && startRank >= 0 && endFile != startFile && board[endFile][endRank] == null){
+                    capturedPiece = board[endFile][endRank + (whiteTurn ? 1: -1)];
                     if(whiteTurn){
                         blackPieces.remove(capturedPiece);
                         blackControlledSquares.remove(capturedPiece);
-
-                        whiteCapturedPieces.add(capturedPiece.pieceType);
+                        whiteCapturedPieces.add(new Piece(PieceType.PAWN, true, new Square(-1, -1), false));
                     } else {
                         whitePieces.remove(capturedPiece);
                         whiteControlledSquares.remove(capturedPiece);
-                        blackCapturedPieces.add(capturedPiece.pieceType);
+                        blackCapturedPieces.add(new Piece(PieceType.PAWN, false, new Square(-1, -1), false));
                     }
                     board[endFile][endRank + (whiteTurn ? 1: -1)] = null;
                     fiftyMoveRuleCounter = -1;
                     portableGameNotation += (char)(startFile + (int)'a') + "x";
-                    isCapture = true;
                 }
             }
-            
-            board[startFile][startRank] = null;
+            if(startFile >= 0 && startRank >= 0){
+                board[startFile][startRank] = null;
+            }
+
             board[endFile][endRank] = piece;
             piece.square = new Square(endFile, endRank);
             
@@ -1318,7 +1473,7 @@ public class Chess implements AbstractStrategyGame{
                 }
             }
 
-            return isCapture;
+            return capturedPiece != null;
         }
 
         //promotion moves
@@ -1352,39 +1507,41 @@ public class Chess implements AbstractStrategyGame{
         //  - A set of pieces to be ordered
         //Behavior:
         //  - Orders the captured piece lists for crazyhouse in the order P,N,B,R,Q
-        private void orderPieces(List<PieceType> pieceList){
-            List<PieceType> orderedPieceList = new ArrayList<>();
+        private List<Piece> orderPieces(List<Piece> pieceList){
+            List<Piece> orderedPieceList = new ArrayList<>();
             //pawns
             for(int i = 0; i < pieceList.size(); i++){
-                if(pieceList.get(i) == PieceType.PAWN){
-                    orderedPieceList.add(PieceType.PAWN);
+                if(pieceList.get(i).pieceType == PieceType.PAWN){
+                    //System.out.println("found pawn at " + i);
+                    orderedPieceList.add(pieceList.get(i));
                 }
             }
             //knights
             for(int i = 0; i < pieceList.size(); i++){
-                if(pieceList.get(i) == PieceType.KNIGHT){
-                    orderedPieceList.add(PieceType.KNIGHT);
+                if(pieceList.get(i).pieceType == PieceType.KNIGHT){
+                    orderedPieceList.add(pieceList.get(i));
                 }
             }
             //bishops
             for(int i = 0; i < pieceList.size(); i++){
-                if(pieceList.get(i) == PieceType.BISHOP){
-                    orderedPieceList.add(PieceType.BISHOP);
+                if(pieceList.get(i).pieceType == PieceType.BISHOP){
+                    //System.out.println("found bishop at " + i);
+                    orderedPieceList.add(pieceList.get(i));
                 }
             }
             //rooks
             for(int i = 0; i < pieceList.size(); i++){
-                if(pieceList.get(i) == PieceType.ROOK){
-                    orderedPieceList.add(PieceType.ROOK);
+                if(pieceList.get(i).pieceType == PieceType.ROOK){
+                    orderedPieceList.add(pieceList.get(i));
                 }
             }
             //queens
             for(int i = 0; i < pieceList.size(); i++){
-                if(pieceList.get(i) == PieceType.QUEEN){
-                    orderedPieceList.add(PieceType.QUEEN);
+                if(pieceList.get(i).pieceType == PieceType.QUEEN){
+                    orderedPieceList.add(pieceList.get(i));
                 }
             }
-            pieceList = orderedPieceList;
+            return orderedPieceList;
         }
 
         //Parameters:
@@ -1445,7 +1602,7 @@ public class Chess implements AbstractStrategyGame{
     //This helper class is used to hold all the data about a specific piece in one place
     private class Piece {
         private Square square;
-        
+        private boolean isPromoted;
         private final PieceType pieceType;
         private final boolean isWhite;
 
@@ -1455,16 +1612,16 @@ public class Chess implements AbstractStrategyGame{
         // - Piece location
         //Behavior:
         //  - Creates new piece object based on the parameters
-        private Piece(PieceType type, boolean isWhite, Square square){
+        private Piece(PieceType type, boolean isWhite, Square square, boolean isPromoted){
             this.pieceType = type;
             this.isWhite = isWhite;
             this.square = square;
+            this.isPromoted = isPromoted;
         }
     }
     //This class is used to hold the location information on the chess board in one place
     private class Square {
-        private final int file;
-        private final int rank;
+        private final int file, rank;
 
         //Parameters
         //  - An integer for the file
