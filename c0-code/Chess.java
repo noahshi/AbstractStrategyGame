@@ -1,7 +1,10 @@
 import java.util.*;
 import java.util.regex.*;
-
-
+// Noah Shi
+// 10/4/2023
+// CSE 123
+// Creative Project 0: Abstract Strategy Game
+// TA: Suhani Arora
 
 //TODO:
 //finish writing game instructions
@@ -467,6 +470,7 @@ public class Chess implements AbstractStrategyGame{
             Piece piece = null;
             if(move.contains("@")){
                 piece = placedPiece;
+                board.fiftyMoveRuleCounter = -1;
             } else {
                 piece = board.board[startFile][startRank];
             }
@@ -559,24 +563,54 @@ public class Chess implements AbstractStrategyGame{
             //removing castling rights if king or rook moved
             if(piece.pieceType == PieceType.KING){
                 if(board.whiteTurn){
+                    if(board.whiteCastlingRights[KINGSIDE] 
+                        || board.whiteCastlingRights[QUEENSIDE]){
+                        
+                        threeFoldCheck.clear();
+                    }
                     board.whiteCastlingRights[KINGSIDE] = false;
                     board.whiteCastlingRights[QUEENSIDE] = false;
                 } else {
+                    if(board.blackCastlingRights[KINGSIDE] 
+                        || board.blackCastlingRights[QUEENSIDE]){
+                        
+                        threeFoldCheck.clear();
+                    }
                     board.blackCastlingRights[KINGSIDE] = false;
                     board.blackCastlingRights[QUEENSIDE] = false;
                 }
             }
             if(piece.pieceType == PieceType.ROOK){
                 if(board.whiteTurn){
-                    if(piece.square.file > board.whiteKingSquare.file){
+                    if(board.kingsideCastleRooks[0] != null 
+                        && board.kingsideCastleRooks[0].equals(piece)){
+                        
+                        if(board.whiteCastlingRights[KINGSIDE]){
+                            threeFoldCheck.clear();
+                        }
                         board.whiteCastlingRights[KINGSIDE] = false;
-                    } else {
+                    } else if(board.queensideCastleRooks[0] != null 
+                        && board.queensideCastleRooks[0].equals(piece)){
+                        
+                        if(board.whiteCastlingRights[QUEENSIDE]){
+                            threeFoldCheck.clear();
+                        }
                         board.whiteCastlingRights[QUEENSIDE] = false;
                     }
                 } else {
-                    if(piece.square.file > board.blackKingSquare.file){
+                    if(board.kingsideCastleRooks[1] != null 
+                        && board.kingsideCastleRooks[1].equals(piece)){
+                        
+                        if(board.blackCastlingRights[KINGSIDE]){
+                            threeFoldCheck.clear();
+                        }
                         board.blackCastlingRights[KINGSIDE] = false;
-                    } else {
+                    } else if(board.queensideCastleRooks[1] != null 
+                        && board.queensideCastleRooks[1].equals(piece)){
+                        
+                        if(board.blackCastlingRights[QUEENSIDE]){
+                            threeFoldCheck.clear();
+                        }
                         board.blackCastlingRights[QUEENSIDE] = false;
                     }
                 }
@@ -591,20 +625,76 @@ public class Chess implements AbstractStrategyGame{
 
             //checking for end scenarios below
 
-            //FIFTY MOVE RULE
-            if(board.fiftyMoveRuleCounter > 100){
+            //INSUFFICIENT MATERIAL
+            int whiteBishopCounter = 0;
+            int whiteKnightCounter = 0;
+            int blackBishopCounter = 0;
+            int blackKnightCounter = 0;
+            boolean insufficientMaterial = true;
+            for(Piece material : board.whitePieces){
+                    if(material.pieceType == PieceType.KNIGHT){
+                        whiteKnightCounter ++;
+                    }
+                    if(material.pieceType == PieceType.BISHOP){
+                        whiteBishopCounter ++;
+                    }
+                    if(material.pieceType == PieceType.PAWN || material.pieceType 
+                        == PieceType.ROOK || material.pieceType == PieceType.QUEEN){
+                        
+                        insufficientMaterial = false;
+                    }
+                }
+                for(Piece material : board.blackPieces){
+                    if(material.pieceType == PieceType.KNIGHT){
+                        blackKnightCounter ++;
+                    }
+                    if(material.pieceType == PieceType.BISHOP){
+                        blackBishopCounter ++;
+                    }
+                    if(material.pieceType == PieceType.PAWN || material.pieceType 
+                        == PieceType.ROOK || material.pieceType == PieceType.QUEEN){
+                        
+                        insufficientMaterial = false;
+                    }
+                }
+            if(gameType == 2){
+                insufficientMaterial = false;
+            }
+            if(whiteKnightCounter + whiteBishopCounter + blackKnightCounter 
+                + blackBishopCounter > 2){
+                
+                insufficientMaterial = false;
+            }
+            if(whiteKnightCounter + whiteBishopCounter == 2 && whiteBishopCounter != 0){
+                insufficientMaterial = false;
+            }
+            if(blackKnightCounter + blackBishopCounter == 2 && blackBishopCounter != 0){
+                insufficientMaterial = false;
+            }
+
+            if(gameType == 3){
+                if(whiteKnightCounter + whiteBishopCounter > 0 
+                    && blackKnightCounter + blackBishopCounter > 0){
+                    
+                    insufficientMaterial = false;
+                }
+            }
+
+            if(insufficientMaterial){
                 winner = 0;
                 board.portableGameNotation += "$";
                 board.portableGameNotation += " 1/2-1/2";
             }
 
             //3 FOLD REPETITION
-            String currentFEN = board.boardToFENShort();
-            if(threeFoldCheck.get(currentFEN) == null){
-                threeFoldCheck.put(currentFEN, 1);
+            String currentBoardAsFEN = board.boardToFENShort();
+            if(threeFoldCheck.get(currentBoardAsFEN) == null){
+                threeFoldCheck.put(currentBoardAsFEN, 1);
             } else {
-                threeFoldCheck.replace(currentFEN, threeFoldCheck.get(currentFEN) + 1);
-                if(threeFoldCheck.get(currentFEN) == 3){
+                threeFoldCheck.replace(currentBoardAsFEN, 
+                    threeFoldCheck.get(currentBoardAsFEN) + 1);
+
+                if(threeFoldCheck.get(currentBoardAsFEN) == 3){
                     winner = 0;
                     board.portableGameNotation += "$";
                     board.portableGameNotation += " 1/2-1/2";
@@ -630,6 +720,14 @@ public class Chess implements AbstractStrategyGame{
                     board.portableGameNotation += " 1/2-1/2";
                 }
             }
+
+            //FIFTY MOVE RULE
+            if(board.fiftyMoveRuleCounter > 100){
+                winner = 0;
+                board.portableGameNotation += "$";
+                board.portableGameNotation += " 1/2-1/2";
+            }
+
             //checking for end scenarios above
 
             if(board.playerInCheck[board.whiteTurn ? 1 : 0] && winner == -1){
